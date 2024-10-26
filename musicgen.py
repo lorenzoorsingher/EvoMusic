@@ -2,6 +2,7 @@ import torch
 from transformers import MusicgenForConditionalGeneration, AutoProcessor
 import gradio as gr
 import numpy as np
+import math
 
 # Suppress warnings (optional, but can be helpful during development)
 import warnings
@@ -19,7 +20,7 @@ device = "cuda:0" if torch.cuda.is_available() else "cpu"
 model.to(device)
 
 # Function to generate music
-def generate_music(text_prompt, guidance_scale, max_new_tokens):
+def generate_music(text_prompt, guidance_scale, duration, temperature):
     try:
         # Preprocess the input text
         inputs = processor(
@@ -29,12 +30,15 @@ def generate_music(text_prompt, guidance_scale, max_new_tokens):
         )
         inputs = inputs.to(device)
 
+        max_new_tokens = math.ceil(duration * 256 / 5)  # Calculate the number of tokens based on duration
+
         # Generate audio using the model
         audio_values = model.generate(
             **inputs,
             do_sample=True,
             guidance_scale=guidance_scale,
-            max_new_tokens=max_new_tokens
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
         )
 
         # Retrieve the sampling rate from the model's configuration
@@ -78,7 +82,8 @@ iface = gr.Interface(
     inputs=[
         gr.Textbox(lines=2, label="Text Prompt"),
         gr.Slider(1, 5, step=0.5, value=3, label="Guidance Scale"),
-        gr.Slider(256, 1500, step=256, value=1024, label="Max New Tokens")
+        gr.Slider(1, 60, step=1, value=10, label="Duration (Seconds)"),
+        gr.Slider(0, 10, step=0.1, value=1.0, label="Temperature"),
     ],
     outputs=gr.Audio(type="numpy", label="Generated Music"),
     title="MusicGen Text-to-Music Generator",
@@ -86,4 +91,4 @@ iface = gr.Interface(
 )
 
 # Launch the interface with share=True for a public link
-iface.launch(share=True)
+iface.launch()
