@@ -15,6 +15,10 @@ class Aligner(nn.Module):
         self.fc2 = nn.Linear(4096, emb_size)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
+
+        user_embs = self.users(x)
+
+        x = F.relu(self.fc1(user_embs))
         x = self.fc2(x)
+
         return x
