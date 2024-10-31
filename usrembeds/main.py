@@ -48,20 +48,34 @@ def eval_loop(model, val_loader):
         idx = idx.to(DEVICE)
         posemb = posemb.to(DEVICE)
         negemb = negemb.to(DEVICE)
-        out = model(idx)
 
-        out = out.unsqueeze(1)
+        ellemb = torch.cat((posemb, negemb), dim=1)
+
+        urs_x, embs = model(idx, ellemb)
+
+        # breakpoint()
+        posemb_out = embs[
+            :,
+            0,
+        ].unsqueeze(dim=1)
+        negemb_out = embs[
+            :,
+            1:,
+        ]
+
+        # breakpoint()
+        out = urs_x.unsqueeze(1)
         # breakpoint()
 
         # breakpoint()
         cos = nn.CosineSimilarity(dim=2, eps=1e-6)
 
-        possim = cos(out, posemb).squeeze(1)
+        possim = cos(out, posemb_out).squeeze(1)
 
-        out = out.repeat(1, negemb.shape[1], 1)
-        negsim = cos(out, negemb)
+        out = out.repeat(1, negemb_out.shape[1], 1)
+        negsim = cos(out, negemb_out)
 
-        negsim = negsim.view(-1, negemb.shape[1])
+        negsim = negsim.view(-1, negemb_out.shape[1])
 
         mean_negsim = torch.mean(negsim, dim=1)
 
@@ -94,8 +108,8 @@ if __name__ == "__main__":
     dataset = ContrDataset(
         membs_path,
         stats_path,
-        nneg=32,
-        multiplier=1,
+        nneg=20,
+        multiplier=10,
         transform=None,
     )
 
@@ -113,9 +127,10 @@ if __name__ == "__main__":
         n_users=NUSERS,
         emb_size=20,
         prj_size=EMB_SIZE,
+        prj_type="ln",
     ).to(DEVICE)
 
-    EPOCHS = 10
+    EPOCHS = 1000
 
     opt = optim.AdamW(model.parameters(), lr=0.001)
     TEMP = 0.07
@@ -135,9 +150,23 @@ if __name__ == "__main__":
             posemb = posemb.to(DEVICE)
             negemb = negemb.to(DEVICE)
             opt.zero_grad()
-            out = model(idx)
 
-            out = out.unsqueeze(1)
+            ellemb = torch.cat((posemb, negemb), dim=1)
+
+            urs_x, embs = model(idx, ellemb)
+
+            # breakpoint()
+            posemb_out = embs[
+                :,
+                0,
+            ].unsqueeze(dim=1)
+            negemb_out = embs[
+                :,
+                1:,
+            ]
+
+            # breakpoint()
+            out = urs_x.unsqueeze(1)
 
             loss = contrastive_loss(out, posemb, negemb)
 
