@@ -17,6 +17,7 @@ class Aligner(nn.Module):
         self.fc2 = nn.Linear(4096, prj_size)
 
         self.ln = nn.LayerNorm(prj_size)
+        self.bn = nn.BatchNorm1d(prj_size)
         self.fc3 = nn.Linear(prj_size, prj_size)
 
     def forward(self, idx, embs):
@@ -30,7 +31,12 @@ class Aligner(nn.Module):
 
         if self.prj_type == "linear":
             embs = self.fc3(embs)
-        else:
+        elif self.prj_type == "ln":
             embs = self.ln(embs)
+        elif self.prj_type == "bn":
+            # TODO: not sure this is the right way
+            embs = embs.permute(0, 2, 1)
+            embs = self.bn(embs)
+            embs = embs.permute(0, 2, 1)
 
         return urs_x, embs

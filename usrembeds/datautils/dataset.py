@@ -141,6 +141,7 @@ class ContrDataset(Dataset):
         negset = np.random.choice(neg, size=self.nneg, replace=False)
 
         # [0] because we only have one embedding per song atm
+        # TODO pick a random embedding if there are multiple
         posemb = torch.Tensor([self.embeddings[pos][0] for pos in posset])
         negemb = torch.Tensor([self.embeddings[neg][0] for neg in negset])
 
