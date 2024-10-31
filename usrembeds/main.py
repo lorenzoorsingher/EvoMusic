@@ -9,11 +9,12 @@ import torch.nn as nn
 
 from torch import optim
 
+from tqdm import tqdm
+
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
 
 
-def constrstive_loss(possim, negsim, temp=0.07):
-    # breakpoint()
+def contrastive_loss(out, possim, negsim, temp=0.07):
 
     possim = cos(out, posemb)
 
@@ -24,6 +25,7 @@ def constrstive_loss(possim, negsim, temp=0.07):
     exp = torch.exp(logits)
     loss = -torch.log(exp[:, 0] / torch.sum(exp, dim=1))
     loss = torch.mean(loss)
+    return loss
 
 
 if __name__ == "__main__":
@@ -37,11 +39,21 @@ if __name__ == "__main__":
     membs_path = "usrembeds/data/embeddings/embeddings_1000.json"
     stats_path = "../scraper/data/clean_stats.csv"
 
-    dataset = ContrDataset(membs_path, stats_path, nneg=32, transform=None)
+    dataset = ContrDataset(
+        membs_path,
+        stats_path,
+        nneg=32,
+        multiplier=10,
+        transform=None,
+    )
     NUSERS = dataset.nusers
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=True)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=16, shuffle=True)
 
-    model = Aligner(NUSERS, EMB_SIZE).to(DEVICE)
+    model = Aligner(
+        n_users=NUSERS,
+        emb_size=20,
+        prj_size=EMB_SIZE,
+    ).to(DEVICE)
 
     EPOCHS = 10
 
@@ -54,7 +66,7 @@ if __name__ == "__main__":
 
         print(f"Epoch {epoch}")
         losses = []
-        for tracks in dataloader:
+        for tracks in tqdm(dataloader):
 
             # [B]
             # [B, 1, EMB]
@@ -69,7 +81,7 @@ if __name__ == "__main__":
 
             out = out.unsqueeze(1)
 
-            loss = constrstive_loss(out, posemb, negemb)
+            loss = contrastive_loss(out, posemb, negemb)
 
             losses.append(loss.item())
 
