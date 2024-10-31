@@ -5,14 +5,14 @@ import torch.nn.functional as F
 
 
 class Aligner(nn.Module):
-    def __init__(self, n_users, emb_size):
+    def __init__(self, n_users, emb_size, prj_size):
 
         super(Aligner, self).__init__()
 
         self.users = nn.Embedding(n_users, emb_size)
 
         self.fc1 = nn.Linear(emb_size, 4096)
-        self.fc2 = nn.Linear(4096, emb_size)
+        self.fc2 = nn.Linear(4096, prj_size)
 
     def forward(self, x):
 

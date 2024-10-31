@@ -86,11 +86,13 @@ class ContrDataset(Dataset):
         embs_dir,
         stats_dir,
         nneg=10,
+        multiplier=10,
         transform=None,
     ):
         self.embs_dir = embs_dir
         self.stats_dir = stats_dir
         self.nneg = nneg
+        self.multiplier = multiplier
         self.transform = transform
 
         # load the songs embeddigns
@@ -123,7 +125,7 @@ class ContrDataset(Dataset):
         # breakpoint()
 
     def __len__(self):
-        return self.nusers * 10
+        return self.nusers * self.multiplier
 
     def __getitem__(self, idx):
 
