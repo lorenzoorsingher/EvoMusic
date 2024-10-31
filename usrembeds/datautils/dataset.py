@@ -155,12 +155,14 @@ class MusicDataset(Dataset):
         audio_len=1,
         resample=None,
         nsamples=None,
+        repeat=1,
         transform=None,
     ):
         self.data_dir = data_dir
         self.type = type
         self.audio_len = audio_len
         self.resample = resample
+        self.repeat = repeat
 
         self.transform = transform
 
@@ -172,12 +174,15 @@ class MusicDataset(Dataset):
         ]
 
         if nsamples is not None:
-            tracks_paths = tracks_paths[:nsamples]
+            self.tracks_paths = self.tracks_paths[:nsamples]
 
     def __len__(self):
-        return len(self.tracks_paths)
+        return len(self.tracks_paths) * self.repeat
 
     def __getitem__(self, idx):
+
+        idx = idx % len(self.tracks_paths)
+
         stat = {}
         track_path = self.tracks_paths[idx]
         stat["id"] = track_path.split("/")[-1].split("_")[0]
@@ -193,6 +198,11 @@ class MusicDataset(Dataset):
 
         # print("loaded mp3")
         # take random audio_len long sec snippet
+
+        # if audio is too short, repeat it
+        pad_times = int((sr * self.audio_len) / len(y))
+        y = np.tile(y, pad_times + 1)
+
         snip_len = min(len(y), sr * self.audio_len) - 1
         snip_idx = np.random.randint(0, len(y) - snip_len)
         snip = y[snip_idx : snip_idx + snip_len]
