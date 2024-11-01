@@ -91,4 +91,4 @@ iface = gr.Interface(
 )
 
 # Launch the interface with share=True for a public link
-iface.launch()
+# iface.launch()
