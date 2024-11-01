@@ -1,13 +1,14 @@
 import os
 import torch
 import torchaudio
-import evotorch
 from evotorch import Problem, Solution
 from evotorch.algorithms import CMAES, SearchAlgorithm
 from evotorch.algorithms.searchalgorithm import SinglePopulationAlgorithmMixin
 from diffusers import DiffusionPipeline
 from sklearn.decomposition import PCA
 import joblib
+
+from transformers import AutoModel, Wav2Vec2FeatureExtractor
 
 import requests
 import json
@@ -31,17 +32,11 @@ sys.path.append("./")
 sys.path.append("music_generation")
 from riffusion.spectrogram_image_converter import SpectrogramImageConverter
 from riffusion.spectrogram_params import SpectrogramParams
-# from musicgen import generate_music as generate_music_autoregressive
-
-import torchopenl3
-
-matplotlib.use("TkAgg")
-plt.ion()
 
 # ----------------------------- Configuration -----------------------------
 
 # Paths and IDs
-TARGET_AUDIO_PATH = "generated_audio/breaking_me_down.mp3"  # <-- Replace with your actual target audio path
+TARGET_AUDIO_PATH = "generated_audio/generated_music.wav"  # <-- Replace with your actual target audio path
 MODEL_ID = "riffusion/riffusion-model-v1"
 LLM_API_URL = "http://127.0.0.1:1234/v1/chat/completions"  # Ensure this is your running LLM API endpoint
 LLM_MODEL = "llama-3.2-1b-instruct"  # Ensure this matches your LLM model
@@ -50,59 +45,67 @@ LLM_MODEL = "llama-3.2-1b-instruct"  # Ensure this matches your LLM model
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Evolutionary Algorithm Parameters
-POPULATION_SIZE = 25
+POPULATION_SIZE = 5
 ELITES = 0.2
 CROSS_MUTATION = 0.2
 NOVEL_PROMPTS = 0.1
 TOURNAMENT_SIZE = 3
 NUM_GENERATIONS = 50
 
+EMB_SIZE = 768
+PROMPT_LENGTH = 5
+
 NUM_INFERENCE_STEPS = 50
-DURATION = 1  # in seconds
-EMB_SIZE = 512
+DURATION = 5  # in seconds
 HOP_SIZE = 0.1
 
 TEMPERATURE = 0.75
+
+# Optimization Mode
+# Set to True for prompt optimization, False for embedding optimization
+PROMPT_OPTIM = False
 
 # -------------------------------------------------------------------------
 
 # ------------------------- Audio Embedding Setup -------------------------
 
-# Load the Encodec model and processor
-model = torchopenl3.core.load_audio_embedding_model(
-        input_repr="mel256",
-        content_type="music",
-        embedding_size=EMB_SIZE,
-    )
+# Load the tokenizer and model
+model = AutoModel.from_pretrained("m-a-p/MERT-v1-95M", trust_remote_code=True).to(DEVICE)
+processor = Wav2Vec2FeatureExtractor.from_pretrained("m-a-p/MERT-v1-95M", trust_remote_code=True)
+resample_rate = processor.sampling_rate
 
 def get_audio_embedding(audio_path):
     """
     Compute the embedding of an audio file using the EncodecModel.
     Ensures that the audio is stereo (2 channels) before processing.
     """
-    import torchaudio
-
     # Load audio
     waveform, sample_rate = torchaudio.load(audio_path)
     # print(f"Loaded audio '{audio_path}' with shape {waveform.shape} and sample rate {sample_rate} Hz.")
 
+    # Resample audio if necessary
+    if sample_rate != resample_rate:
+        resampler = torchaudio.transforms.Resample(sample_rate, resample_rate)
+        waveform = resampler(waveform)
+        sample_rate = resample_rate
+
+    # make audio mono if stereo
+    if waveform.shape[0] == 2:
+        waveform = waveform.mean(dim=0)
+    else:
+        waveform = waveform.squeeze(0)
+
     with torch.no_grad():
-        emb, ts = torchopenl3.get_audio_embedding(
-            waveform.unsqueeze(0),
-            sample_rate,
-            batch_size=1,
-            model=model,
-            hop_size=HOP_SIZE,
-            embedding_size=EMB_SIZE,
-        )
-        mean_emb = emb.mean(axis=1)[0]
+        inputs = processor(waveform, sampling_rate=resample_rate, return_tensors="pt")
+        inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
+        output = model(**inputs)
+        embedding = output.last_hidden_state.mean(dim=1).squeeze(0)
 
-    del emb, ts, waveform  # Clear memory
-    # print(f"Computed embedding with shape {mean_emb.shape}.")
-
-    # normalize the embedding
-    mean_emb = mean_emb / mean_emb.norm()
-    return mean_emb.to(DEVICE)
+    # Clear memory
+    # del emb, ts, 
+    del waveform  
+    
+    return embedding.to(DEVICE)
 
 # compute PCA on 128 embeddings using the songs in a music dataset
 def compute_pca():
@@ -110,12 +113,12 @@ def compute_pca():
     embeddings = []
     audios = os.listdir(audio_path)
 
-    pca = PCA(n_components=min(128,len(audios)))
+    # pca = PCA(n_components=min(512,len(audios)))
     pca_3D = PCA(n_components=3)
 
     # look if already computed
-    if os.path.isfile("pca.pkl") and os.path.isfile("pca_3D.pkl"):
-        pca = joblib.load("pca.pkl")
+    if os.path.isfile("pca_3D.pkl"):
+        # pca = joblib.load("pca.pkl")
         pca_3D = joblib.load("pca_3D.pkl")
     else:
         for file in tqdm(audios):
@@ -123,26 +126,40 @@ def compute_pca():
             embeddings.append(emb.cpu().numpy())
         embeddings = np.array(embeddings)
 
-        pca.fit(embeddings)
+        # pca.fit(embeddings)
         pca_3D.fit(embeddings)
-        joblib.dump(pca, "pca.pkl")
+        # joblib.dump(pca, "pca.pkl")
         joblib.dump(pca_3D, "pca_3D.pkl")
 
-    return pca, pca_3D  # Return both PCA objects
+        # show 3D PCA space
+        embeddings = pca_3D.transform(embeddings)
+        # normalize each embedding
+        embeddings = embeddings / np.linalg.norm(embeddings, axis=1)[:,None]
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.scatter(embeddings[:,0], embeddings[:,1], embeddings[:,2])
+        ax.set_xlabel('PCA 1')
+        ax.set_ylabel('PCA 2')
+        ax.set_zlabel('PCA 3')
+        plt.show()
 
-pca, pca_3D = compute_pca()
+    return pca_3D  # Return both PCA objects
+
+pca_3D = compute_pca()
 
 # Compute target embedding
 print("Computing target audio embedding...")
 if not os.path.isfile(TARGET_AUDIO_PATH):
     raise FileNotFoundError(f"Target audio file not found at: {TARGET_AUDIO_PATH}")
 
-target_embedding_full = get_audio_embedding(TARGET_AUDIO_PATH).to(DEVICE)
-target_embedding = pca.transform(target_embedding_full.cpu().numpy().reshape(1,-1))[0]
-target_embedding = torch.tensor(target_embedding).to(DEVICE)
+target_embedding = get_audio_embedding(TARGET_AUDIO_PATH).to(DEVICE)
+# target_embedding = pca.transform(target_embedding_full.cpu().numpy().reshape(1,-1))[0]
+# target_embedding = torch.tensor(target_embedding).to(DEVICE)
 
 # Project target embedding into 3D PCA space
-target_embedding_3D = pca_3D.transform(target_embedding_full.cpu().numpy().reshape(1,-1))[0]
+target_embedding_3D = pca_3D.transform(target_embedding.cpu().numpy().reshape(1,-1))[0]
+# normalize the embedding
+target_embedding_3D = target_embedding_3D / np.linalg.norm(target_embedding_3D)
 print("Target embedding computed.")
 
 # ------------------------- Music Generation Setup ------------------------
@@ -158,7 +175,7 @@ print("Riffusion pipeline loaded.")
 
 def generate_music_riffusion(prompt: str=None, embeds=None, num_inference_steps: int = NUM_INFERENCE_STEPS, duration: int = DURATION, name = None):
     """
-    Generate music using the Riffusion model based on a text prompt.
+    Generate music using the Riffusion model based on a text prompt or embeddings.
     Returns the path to the generated audio file.
     """
 
@@ -166,7 +183,7 @@ def generate_music_riffusion(prompt: str=None, embeds=None, num_inference_steps:
     generator = torch.Generator(device=DEVICE)
     generator.manual_seed(0)     
 
-    assert prompt is not None or embeds is not None, "Either prompt or embeds must be provided."
+    assert (prompt is not None) or (embeds is not None), "Either prompt or embeds must be provided."
 
     width = math.ceil(duration * (512 / 5))  # Calculate the width based on the duration
     # must be divisible by 8
@@ -176,8 +193,7 @@ def generate_music_riffusion(prompt: str=None, embeds=None, num_inference_steps:
         output = pipe(prompt, num_inference_steps=num_inference_steps, width=width, generator=generator)
     else:
         # print(f"Generating music with embeddings.")
-        # embeds = embeds + torch.stack([pipe.text_encoder.text_model.embeddings.position_embedding(torch.tensor(i).to(DEVICE)) for i in range(embeds.shape[0])])
-        # embeds = pipe.text_encoder.text_model.encoder(embeds).last_hidden_state
+        embeds = embeds.view(-1, EMB_SIZE)
         output = pipe(prompt_embeds=embeds, num_inference_steps=num_inference_steps, width=width, generator=generator)
 
     image = output.images[0]
@@ -199,30 +215,6 @@ def generate_music_riffusion(prompt: str=None, embeds=None, num_inference_steps:
     # print(f"Generated audio saved at: {audio_path}")
 
     del image, segment, output  # Clear memory
-    return audio_path
-
-def generate_music_musicgen(prompt: str, guidance_scale=3.0, duration=DURATION, temperature=TEMPERATURE, name=None):
-    """
-    Generate music using the MusicGen model based on a text prompt.
-    Returns the path to the generated audio file.
-    """
-    sr, audio = generate_music_autoregressive(prompt, guidance_scale, duration, temperature)
-    output_dir = "generated_audio"
-    os.makedirs(output_dir, exist_ok=True)
-    if name is None:
-        audio_filename = f"generated_music_{torch.randint(0, int(1e6), (1,)).item()}.wav"
-    else:
-        audio_filename = f"{name}.wav"
-    audio_path = os.path.join(output_dir, audio_filename)
-    
-    audio = torch.tensor(audio).to(torch.float32)
-    # Ensure audio is a 2D tensor with shape [num_channels, num_frames]
-    if len(audio.shape) == 1:
-        audio = torch.unsqueeze(audio, 0)  # Convert to 2D tensor with one channel
-
-    # Save the audio file
-    torchaudio.save(audio_path, audio, sr, format="wav")
-
     return audio_path
 
 generate_music = generate_music_riffusion
@@ -259,12 +251,12 @@ def query_llm(prompt: str, temperature=TEMPERATURE):
 
 class PromptOptimizationProblem(Problem):
     """
-    Evotorch Problem for optimizing music prompts represented as embedding vectors.
+    Evotorch Problem for optimizing music prompts or embeddings.
     """
-    def __init__(self, target_embedding, target_embedding_3D, population_size=POPULATION_SIZE):
+    def __init__(self, target_embedding, target_embedding_3D, prompt_optim=True, prompt_length=PROMPT_LENGTH, population_size=POPULATION_SIZE):
         super().__init__(
             objective_sense="max",
-            solution_length=1,
+            solution_length= 1 if prompt_optim else EMB_SIZE * prompt_length,  # 1 for prompt indices, EMB_SIZE for embeddings
             initial_bounds=(-1, 1),
             device=DEVICE
         )
@@ -274,31 +266,48 @@ class PromptOptimizationProblem(Problem):
         self.generated = 0
         self.embeddings_3D = []
         self.best_embeddings = []
+        self.prompt_optim = prompt_optim
+
+        if not self.prompt_optim:
+            # Initialize embeddings using the LM or randomly
+            # For demonstration, initializing randomly; replace with LM-based initialization as needed
+            self.initial_embeddings = torch.randn((self.population_size, EMB_SIZE), device=DEVICE)
 
     def _evaluate(self, solution: Solution):
         """
-        Objective function that maps solution vectors to prompts, generates music,
+        Objective function that maps solution vectors to prompts or embeddings, generates music,
         computes embeddings, and evaluates similarity to the target embedding.
         """
         self.generated += 1
-        # Compute statistical properties of the vector
-        index = int(solution.values.item())
-        # Generate music using the prompt
-        audio_path = generate_music(self.prompts[index])
+
+        if self.prompt_optim:
+            # Prompt Optimization Mode
+            index = int(solution.values.item())
+            audio_path = generate_music(prompt=self.prompts[index])
+
+        else:
+            # Embedding Optimization Mode
+            embedding = solution.values  # Assuming shape (EMB_SIZE,)
+            audio_path = generate_music(embeds=embedding)
 
         # Compute the embedding of the generated music
-        generated_embedding_full = get_audio_embedding(audio_path)
-        generated_embedding = pca.transform(generated_embedding_full.cpu().numpy().reshape(1,-1))[0]
-        generated_embedding = torch.tensor(generated_embedding).to(DEVICE)
+        generated_embedding = get_audio_embedding(audio_path)
 
         # Project into 3D PCA space
-        generated_embedding_3D = pca_3D.transform(generated_embedding_full.cpu().numpy().reshape(1, -1))[0]
-
+        generated_embedding_3D = pca_3D.transform(generated_embedding.cpu().numpy().reshape(1, -1))[0]
+        # normalize the embedding
+        generated_embedding_3D = generated_embedding_3D / np.linalg.norm(generated_embedding_3D)
+        # Store the 3D embedding for visualization
         self.embeddings_3D.append(generated_embedding_3D)
 
-        # Compute cosine similarity
-        similarity = torch.cosine_similarity(self.target_embedding, generated_embedding, dim=0).item()
-        # Use L2 distance instead of cosine similarity
+        if self.prompt_optim:
+            # Compute cosine similarity
+            similarity = torch.cosine_similarity(self.target_embedding, generated_embedding, dim=0).item()
+        else:
+            # For embedding optimization, compute cosine similarity directly
+            similarity = torch.cosine_similarity(self.target_embedding, generated_embedding, dim=0).item()
+
+        # Use L2 distance instead of cosine similarity if preferred
         # similarity = - torch.dist(self.target_embedding, generated_embedding, p=2).item()
 
         # print(f"Vector similarity: {similarity}")
@@ -319,24 +328,36 @@ class PromptOptimizationProblem(Problem):
         solution.set_evals(similarity)
 
     def _fill(self, values: torch.Tensor):
-        self.prompts = []
-        # Compute text embeddings from the a set of random musical terms
-        while len(self.prompts) < self.population_size:
-            answers = query_llm(f"Generate {self.population_size-len(self.prompts)} creative and diverse music prompts for generating music.")
+        if self.prompt_optim:
+            self.prompts = []
+            # Compute text embeddings from a set of random musical terms
+            while len(self.prompts) < self.population_size:
+                answers = query_llm(f"Generate {self.population_size-len(self.prompts)} creative and diverse music prompts for generating music.")
 
-            # match the number of <p> and </p> tags if not equal then ignore the prompt
-            if answers.count("<p>") != answers.count("</p>"):
-                continue
+                # match the number of <p> and </p> tags if not equal then ignore the prompt
+                if answers.count("<p>") != answers.count("</p>"):
+                    continue
 
-            for answer in answers.split("</p>"):
-                if "<p>" in answer:
-                    self.prompts.append(answer[answer.index("<p>")+3:].strip())
-        values = torch.tensor([i for i in range(self.population_size)]).to(DEVICE)
+                for answer in answers.split("</p>"):
+                    if "<p>" in answer:
+                        self.prompts.append(answer[answer.index("<p>")+3:].strip())
+            values = torch.tensor([i for i in range(self.population_size)], device=DEVICE).float()
+        else:
+            # Embedding Optimization Mode
+            # Initialize embeddings
+            values = self.initial_embeddings.clone()
+        
+        return values
 
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # Necessary for 3D plotting
-import matplotlib.lines as mlines
+    def _reinitialize_solutions(self, solutions: torch.Tensor):
+        if self.prompt_optim:
+            return self._fill(solutions)
+        else:
+            # For embeddings, reinitialize if needed
+            return solutions
 
+matplotlib.use("TkAgg")
+plt.ion()
 class LivePlotter(Logger):
     def __init__(self, searcher, target_status: str, target_embedding_3D):
         # Call the super constructor
@@ -415,12 +436,18 @@ class LivePlotter(Logger):
 
         # Update 3D Plot
         # Clear previous current population scatter
-        self.current_population_scatter.remove()
+        if hasattr(self, 'current_population_scatter'):
+            self.current_population_scatter.remove()
 
         # Extract current population embeddings
-        current_population_embeddings = np.array([
-            embedding for embedding in self._searcher._problem.embeddings_3D
-        ])
+        if self.prompt_optim:
+            current_population_embeddings = np.array([
+                self._searcher._problem.embeddings_3D[i] for i in range(len(self._searcher._problem.embeddings_3D))
+            ])
+        else:
+            current_population_embeddings = np.array([
+                self._searcher._problem.embeddings_3D[i] for i in range(len(self._searcher._problem.embeddings_3D))
+            ])
 
         # Scatter current population
         self.current_population_scatter = self._ax3D.scatter(
@@ -433,40 +460,43 @@ class LivePlotter(Logger):
         )
 
         # Update best solution
-        best_embedding = self._searcher._problem.best_embeddings[-1]
-        if len(self.best_embedding_history) < len(self._searcher._problem.best_embeddings):
-            self.best_embedding_history.append(best_embedding)
+        if self._searcher._problem.best_embeddings:
+            best_embedding = self._searcher._problem.best_embeddings[-1]
+            if len(self.best_embedding_history) < len(self._searcher._problem.best_embeddings):
+                self.best_embedding_history.append(best_embedding)
 
-        # Clear previous best and past best scatters
-        self.best_scatter.remove()
-        if len(self.best_embedding_history) > 2:
-            self.past_bests_scatter.remove()
+            # Clear previous best and past best scatters
+            if hasattr(self, 'best_scatter'):
+                self.best_scatter.remove()
+            if hasattr(self, 'past_bests_scatter') and len(self.best_embedding_history) > 2:
+                self.past_bests_scatter.remove()
 
-        # Plot best solution
-        self.best_scatter = self._ax3D.scatter(
-            best_embedding[0],
-            best_embedding[1],
-            best_embedding[2],
-            c='green',
-            marker='*',
-            s=100,
-            label='Best Solution'
-        )
-
-        # Plot past bests
-        if len(self.best_embedding_history) > 1:
-            past_bests = np.array(self.best_embedding_history[:-1])
-            self.past_bests_scatter = self._ax3D.scatter(
-                past_bests[:, 0],
-                past_bests[:, 1],
-                past_bests[:, 2],
-                c='orange',
-                marker='D',
-                s=50,
-                label='Past Bests'
+            # Plot best solution
+            self.best_scatter = self._ax3D.scatter(
+                best_embedding[0],
+                best_embedding[1],
+                best_embedding[2],
+                c='green',
+                marker='*',
+                s=100,
+                label='Best Solution'
             )
 
+            # Plot past bests
+            if len(self.best_embedding_history) > 1:
+                past_bests = np.array(self.best_embedding_history[:-1])
+                self.past_bests_scatter = self._ax3D.scatter(
+                    past_bests[:, 0],
+                    past_bests[:, 1],
+                    past_bests[:, 2],
+                    c='orange',
+                    marker='D',
+                    s=50,
+                    label='Past Bests'
+                )
+
         # Re-add target scatter (it doesn't change)
+        self.target_scatter.remove()
         self.target_scatter = self._ax3D.scatter(
             self._target_embedding_3D[0],
             self._target_embedding_3D[1],
@@ -546,10 +576,15 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
 
         ranking = ""
         for i in range(len(indices)):
-            ranking += f"{i+1}. <p> {self._problem.prompts[indices[i]]} </p> - {self._population[indices[i]].evals.item()}\n"
+            if self._problem.prompt_optim:
+                ranking += f"{i+1}. <p> {self._problem.prompts[indices[i]]} </p> - {self._population[indices[i]].evals.item()}\n"
+            else:
+                ranking += f"{i+1}. <p> Embedding {indices[i]} </p> - {int(self._population[indices[i]].evals.item()*50)+50}\n"
 
-        print("Pop Best", indices[0], ":", self._problem.prompts[indices[0]], self._population[indices[0]].evals.item())
-        self._problem.best = self._problem.prompts[indices[0]]
+        print("Pop Best", indices[0], ":", 
+              self._problem.prompts[indices[0]] if self._problem.prompt_optim else f"Embedding {indices[0]}", 
+              self._population[indices[0]].evals.item())
+        self._problem.best = self._problem.prompts[indices[0]] if self._problem.prompt_optim else self._population[indices[0]].values
         self._problem.best_embeddings.append(self._problem.embeddings_3D[indices[0]])
 
         # keep some solutions sampled from the population with probability proportional to their fitness rank
@@ -569,7 +604,9 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
             # crossover
             words1 = parent1.split()
             words2 = parent2.split()
-            crossover_point = random.randint(0, min(len(words1), len(words2)))
+            if len(words1) == 0 or len(words2) == 0:
+                continue
+            crossover_point = random.randint(0, min(len(words1), len(words2)) - 1)
             new_prompt = " ".join(words1[:crossover_point] + words2[crossover_point:])
             new_prompts.append(new_prompt)
 
@@ -586,17 +623,17 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
             for answer in answers.split("</p>"):
                 if "<p>" in answer:
                     novel_prompts.append(answer[answer.index("<p>")+3:].strip())
-        
+            
         new_prompts += novel_prompts
 
-        # Update the population using LLM by giving him the scores of each prompt and asking for new ones
+        # Update the population using LLM by giving it the scores of each prompt and asking for new ones
         while len(new_prompts) < self._population_size:
             LLM_prompt = f"""
 Generate {self._population_size-len(new_prompts)} creative and diverse music prompts for generating music based on the classification and scores of the previous prompts. You should balance exploration and exploitation to maximize the similarity to the target.
 
 Here is the current population with their similarity scores and ranking:
 {ranking}
-            """
+                """
             answers = query_llm(LLM_prompt)
 
             # match the number of <p> and </p> tags if not equal then ignore the prompt
@@ -607,54 +644,70 @@ Here is the current population with their similarity scores and ranking:
                 if "<p>" in answer:
                     new_prompts.append(answer[answer.index("<p>")+3:].strip())
 
-        # Update the status
+        # Truncate to population size
+        new_prompts = new_prompts[:self._population_size]
+
+        # Update the population
         self._problem.prompts = new_prompts
+        self._population = self._problem.generate_batch(self._population_size)
 
     def _get_best(self):
-        return self._problem.best
+        if self._problem.prompt_optim:
+            return self._problem.best
+        else:
+            # For embeddings, return the best embedding
+            best_solution = self._problem.best_embeddings[-1]
+            return best_solution
 
 def evolve_prompts(problem, population_size=POPULATION_SIZE, generations=NUM_GENERATIONS):
     """
-    Evolve prompts to maximize similarity to target embedding using Evotorch's CMA-ES.
+    Evolve prompts or embeddings to maximize similarity to target embedding using Evotorch's CMA-ES or custom Searcher.
     """
-    # Initialize the CMA-ES optimizer
-    es = PromptSearcher(problem)
+    if problem.prompt_optim:
+        # Initialize the custom PromptSearcher optimizer
+        optimizer = PromptSearcher(problem)
+    else:
+        # Initialize the CMA-ES optimizer for embedding optimization
+        optimizer = CMAES(problem)
 
     # Run the evolution strategy
     print("Starting evolution...")
-    LivePlotter(es, "pop_best_eval", problem.target_embedding_3D)
-    es.run(num_generations=generations)
+    LivePlotter(optimizer, "pop_best_eval", problem.target_embedding_3D, prompt_optim=problem.prompt_optim)
+    optimizer.run(num_generations=generations)
     
     # Get the best solution
-    best_solution = es.status["best"]
-    best_fitness = es.status["pop_best_eval"]
+    best_solution = optimizer.status["best"]
+    best_fitness = optimizer.status["pop_best_eval"]
     print("\n--- Evolution Complete ---")
     print(f"Best Fitness (Cosine Similarity): {best_fitness}")
 
-    # Decode the best solution into a prompt
-    # Compute statistical properties of the best vector
-    best_prompt = best_solution
-    # Generate prompt using vector statistics
-    print(f"Best Prompt: '{best_prompt}'")
-
-    return best_prompt, best_fitness
+    if problem.prompt_optim:
+        # Decode the best solution into a prompt
+        best_prompt = problem.prompts[int(best_solution.item())]
+        print(f"Best Prompt: '{best_prompt}'")
+        return best_prompt, best_fitness
+    else:
+        # For embeddings, return the best embedding
+        best_embedding = best_solution
+        print(f"Best Embedding: {best_embedding}")
+        return best_embedding, best_fitness
 
 # ----------------------------- Main Execution ----------------------------
 
 if __name__ == "__main__":
-    # Ensure TARGET_AUDIO_PATH is correctly set
-    if TARGET_AUDIO_PATH == "path_to_your_target_audio.wav":
-        raise ValueError("Please set TARGET_AUDIO_PATH to the path of your target audio file before running the script.")
-
     # Define the problem
-    problem = PromptOptimizationProblem(target_embedding, target_embedding_3D)
+    problem = PromptOptimizationProblem(target_embedding, target_embedding_3D, prompt_optim=PROMPT_OPTIM)
 
-    # Evolve prompts
-    best_prompt, best_fitness = evolve_prompts(problem)
+    # Evolve prompts or embeddings
+    best_solution, best_fitness = evolve_prompts(problem)
 
-    # Generate final music using the best prompt
-    print("\nGenerating final music with the best prompt...")
-    final_audio_path = generate_music(best_prompt, name="final_music")
+    # Generate final music using the best prompt or embedding
+    print("\nGenerating final music with the best solution...")
+    if PROMPT_OPTIM:
+        final_audio_path = generate_music(prompt=best_solution, name="final_music")
+    else:
+        best_embedding = best_solution.unsqueeze(0)  # Add batch dimension
+        final_audio_path = generate_music(embeds=best_embedding, name="final_music")
     print(f"Final audio saved at: {final_audio_path}")
 
     # Launch Gradio interface to listen to the generated music
