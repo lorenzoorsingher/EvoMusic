@@ -1,4 +1,5 @@
 import os
+import evotorch
 import torch
 import torchaudio
 from evotorch import Problem, Solution
@@ -21,6 +22,7 @@ import random
 import gc
 import numpy as np
 from tqdm.auto import tqdm
+from dotenv import load_dotenv
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -35,35 +37,42 @@ from riffusion.spectrogram_params import SpectrogramParams
 
 # ----------------------------- Configuration -----------------------------
 
+# Load environment variables
+load_dotenv()
+
 # Paths and IDs
-TARGET_AUDIO_PATH = "generated_audio/generated_music.wav"  # <-- Replace with your actual target audio path
+TARGET_AUDIO_PATH = "generated_audio/breaking_me_down.mp3"  # <-- Replace with your actual target audio path
 MODEL_ID = "riffusion/riffusion-model-v1"
-LLM_API_URL = "http://127.0.0.1:1234/v1/chat/completions"  # Ensure this is your running LLM API endpoint
-LLM_MODEL = "llama-3.2-1b-instruct"  # Ensure this matches your LLM model
+# LLM_API_URL = "http://127.0.0.1:1234/v1/chat/completions"  # Ensure this is your running LLM API endpoint
+# LLM_MODEL = "llama-3.2-1b-instruct"  # Ensure this matches your LLM model
+LLM_API_URL = "https://api.openai.com/v1/chat/completions"
+LLM_MODEL = "gpt-4o-mini"
+API_KEY = os.getenv("API_KEY")
 
 # Device configuration
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Evolutionary Algorithm Parameters
-POPULATION_SIZE = 25
-ELITES = 0.2
+POPULATION_SIZE = 10
+ELITES = 0.1
 CROSS_MUTATION = 0.2
 NOVEL_PROMPTS = 0.1
-TOURNAMENT_SIZE = 3
+TOURNAMENT_SIZE = 5
 NUM_GENERATIONS = 50
 
-EMB_SIZE = 768
-PROMPT_LENGTH = 5
 
 NUM_INFERENCE_STEPS = 50
 DURATION = 5  # in seconds
 HOP_SIZE = 0.1
 
-TEMPERATURE = 0.75
+TEMPERATURE_GENERATION = 0.9
+TEMPERATURE_EVOLVE = 0.5
 
 # Optimization Mode
 # Set to True for prompt optimization, False for embedding optimization
-PROMPT_OPTIM = True
+PROMPT_OPTIM = False
+EMB_SIZE = 768 # Embedding size for CLIP model
+MAX_SEQ_LEN = 77  # Maximum sequence length for CLIP model
 
 # -------------------------------------------------------------------------
 
@@ -107,18 +116,18 @@ def get_audio_embedding(audio_path):
     
     return embedding.to(DEVICE)
 
-# compute PCA on 128 embeddings using the songs in a music dataset
+# compute PCA on embeddings using the songs in a music dataset
 def compute_pca():
     audio_path = "generated_audio/songs"
     embeddings = []
     audios = os.listdir(audio_path)
 
-    # pca = PCA(n_components=min(512,len(audios)))
+    pca = PCA(n_components=min(512,len(audios)))
     pca_3D = PCA(n_components=3)
 
     # look if already computed
-    if os.path.isfile("pca_3D.pkl"):
-        # pca = joblib.load("pca.pkl")
+    if os.path.isfile("pca_3D.pkl") and os.path.isfile("pca.pkl"):
+        pca = joblib.load("pca.pkl")
         pca_3D = joblib.load("pca_3D.pkl")
     else:
         for file in tqdm(audios):
@@ -126,9 +135,9 @@ def compute_pca():
             embeddings.append(emb.cpu().numpy())
         embeddings = np.array(embeddings)
 
-        # pca.fit(embeddings)
+        pca.fit(embeddings)
         pca_3D.fit(embeddings)
-        # joblib.dump(pca, "pca.pkl")
+        joblib.dump(pca, "pca.pkl")
         joblib.dump(pca_3D, "pca_3D.pkl")
 
         # show 3D PCA space
@@ -143,21 +152,21 @@ def compute_pca():
         ax.set_zlabel('PCA 3')
         plt.show()
 
-    return pca_3D  # Return both PCA objects
+    return pca, pca_3D  # Return both PCA objects
 
-pca_3D = compute_pca()
+pca, pca_3D = compute_pca()
 
 # Compute target embedding
 print("Computing target audio embedding...")
 if not os.path.isfile(TARGET_AUDIO_PATH):
     raise FileNotFoundError(f"Target audio file not found at: {TARGET_AUDIO_PATH}")
 
-target_embedding = get_audio_embedding(TARGET_AUDIO_PATH).to(DEVICE)
-# target_embedding = pca.transform(target_embedding_full.cpu().numpy().reshape(1,-1))[0]
-# target_embedding = torch.tensor(target_embedding).to(DEVICE)
+target_embedding_full = get_audio_embedding(TARGET_AUDIO_PATH).to(DEVICE)
+target_embedding = pca.transform(target_embedding_full.cpu().numpy().reshape(1,-1))[0]
+target_embedding = torch.tensor(target_embedding).to(DEVICE)
 
 # Project target embedding into 3D PCA space
-target_embedding_3D = pca_3D.transform(target_embedding.cpu().numpy().reshape(1,-1))[0]
+target_embedding_3D = pca_3D.transform(target_embedding_full.cpu().numpy().reshape(1,-1))[0]
 # normalize the embedding
 target_embedding_3D = target_embedding_3D / np.linalg.norm(target_embedding_3D)
 print("Target embedding computed.")
@@ -168,9 +177,12 @@ print("Target embedding computed.")
 print("Loading Riffusion model pipeline...")
 pipe = DiffusionPipeline.from_pretrained(MODEL_ID)
 pipe = pipe.to(DEVICE)
+
+# Dummy safety checker to bypass the safety check
 def dummy_safety_checker(images, **kwargs):
     return images, [False] * len(images)
 pipe.safety_checker = dummy_safety_checker
+
 print("Riffusion pipeline loaded.")
 
 def generate_music_riffusion(prompt: str=None, embeds=None, num_inference_steps: int = NUM_INFERENCE_STEPS, duration: int = DURATION, name = None):
@@ -181,7 +193,7 @@ def generate_music_riffusion(prompt: str=None, embeds=None, num_inference_steps:
 
     #fixed noise generation
     generator = torch.Generator(device=DEVICE)
-    generator.manual_seed(0)     
+    generator.manual_seed(0)
 
     assert (prompt is not None) or (embeds is not None), "Either prompt or embeds must be provided."
 
@@ -193,7 +205,7 @@ def generate_music_riffusion(prompt: str=None, embeds=None, num_inference_steps:
         output = pipe(prompt, num_inference_steps=num_inference_steps, width=width, generator=generator)
     else:
         # print(f"Generating music with embeddings.")
-        embeds = embeds.view(1, -1, EMB_SIZE)
+        embeds = embeds.view(1, MAX_SEQ_LEN, EMB_SIZE).to(DEVICE)
         output = pipe(prompt_embeds=embeds, num_inference_steps=num_inference_steps, width=width, generator=generator)
 
     image = output.images[0]
@@ -221,21 +233,22 @@ generate_music = generate_music_riffusion
 
 # ------------------------- LLM Query Function ----------------------------
 
-def query_llm(prompt: str, temperature=TEMPERATURE):
+def query_llm(prompt: str, temperature=0.5):
     """
     Query the LLM API with the given prompt.
     """
     # print(f"Querying LLM with prompt: '{prompt}'")
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {API_KEY}"
+    }
     data = {
         "model": LLM_MODEL,
         "messages": [
             {"role": "system", "content": "You produce prompts used to generate music following the requests of the user. You should always respond with only the requested prompts and by encasing each one of the produced prompts in <p> and </p> tags. Like the following: 1. <p> A music prompt. </p> 2. <p> Another music prompt. </p>"},
             {"role": "user", "content": prompt}
         ],
-        "temperature": temperature,
-        "max_tokens": -1,  # Adjust as needed
-        "stream": False
+        "temperature": temperature
     }
     try:
         response = requests.post(LLM_API_URL, headers=headers, data=json.dumps(data))
@@ -253,12 +266,12 @@ class PromptOptimizationProblem(Problem):
     """
     Evotorch Problem for optimizing music prompts or embeddings.
     """
-    def __init__(self, target_embedding, target_embedding_3D, prompt_optim=True, prompt_length=PROMPT_LENGTH, population_size=POPULATION_SIZE):
+    def __init__(self, target_embedding, target_embedding_3D, prompt_optim=PROMPT_OPTIM, population_size=POPULATION_SIZE):
         super().__init__(
             objective_sense="max",
-            solution_length= 1 if prompt_optim else EMB_SIZE * prompt_length,  # 1 for prompt indices, EMB_SIZE for embeddings
+            solution_length= 1 if prompt_optim else EMB_SIZE * MAX_SEQ_LEN,
             initial_bounds=(-1, 1),
-            device=DEVICE
+            device=DEVICE if prompt_optim else "cpu"
         )
         self.target_embedding = target_embedding
         self.target_embedding_3D = target_embedding_3D
@@ -284,10 +297,12 @@ class PromptOptimizationProblem(Problem):
             audio_path = generate_music(embeds=embedding)
 
         # Compute the embedding of the generated music
-        generated_embedding = get_audio_embedding(audio_path)
+        generated_embedding_full = get_audio_embedding(audio_path)
+        generated_embedding = pca.transform(generated_embedding_full.cpu().numpy().reshape(1, -1))[0]
+        generated_embedding = torch.tensor(generated_embedding).to(DEVICE)
 
         # Project into 3D PCA space
-        generated_embedding_3D = pca_3D.transform(generated_embedding.cpu().numpy().reshape(1, -1))[0]
+        generated_embedding_3D = pca_3D.transform(generated_embedding_full.cpu().numpy().reshape(1, -1))[0]
         # normalize the embedding
         generated_embedding_3D = generated_embedding_3D / np.linalg.norm(generated_embedding_3D)
         # Store the 3D embedding for visualization
@@ -317,10 +332,10 @@ class PromptOptimizationProblem(Problem):
         
         prompt_length = ""
         if not self.prompt_optim:
-            prompt_length = f" of length {PROMPT_LENGTH-2} words each"
+            prompt_length = f" of maximum {MAX_SEQ_LEN} words each"
 
         while len(prompts) < self.population_size:
-            answers = query_llm(f"Generate {self.population_size-len(prompts)} creative and diverse music prompts for generating music{prompt_length}.")
+            answers = query_llm(f"Generate {self.population_size-len(prompts)} creative and diverse music prompts for generating music{prompt_length} you should generate higly diverse prompts both in structure and contents, spanning different music styles, instruments, tempos, energy, ...", temperature=TEMPERATURE_GENERATION)
 
             # match the number of <p> and </p> tags if not equal then ignore the prompt
             if answers.count("<p>") != answers.count("</p>"):
@@ -329,19 +344,20 @@ class PromptOptimizationProblem(Problem):
             for answer in answers.split("</p>"):
                 if "<p>" in answer:
                     prompts.append(answer[answer.index("<p>")+3:].strip())
+                if len(prompts) >= self.population_size:
+                    break
 
         if self.prompt_optim:
             self.prompts = prompts
             values = torch.tensor([i for i in range(self.population_size)], device=DEVICE).float()
         else:
             # use pipe text_encoder to encode the prompts
-            inputs = pipe.tokenizer(prompts, return_tensors="pt", padding=True, truncation=True, max_length=PROMPT_LENGTH)
-            inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
             with torch.no_grad():
-                outputs = pipe.text_encoder(**inputs)
-                embeddings = outputs.pooler_output
-            values = embeddings.view(-1)
+                outputs = pipe.encode_prompt(prompts, device=DEVICE, num_images_per_prompt=1, do_classifier_free_guidance=True)
+                embeddings = outputs[0]
+            values = embeddings.view(self.population_size, -1)
         
+        # del outputs, embeddings
         return values
 
     def _reinitialize_solutions(self, solutions: torch.Tensor):
@@ -456,7 +472,7 @@ class LivePlotter(Logger):
         # Clear previous best and past best scatters
         if hasattr(self, 'best_scatter'):
             self.best_scatter.remove()
-        if hasattr(self, 'past_bests_scatter') and len(self.best_embedding_history) > 2:
+        if hasattr(self, 'past_bests_scatter') and len(self.best_embedding_history) > 1:
             self.past_bests_scatter.remove()
 
         # Plot best solution
@@ -471,12 +487,12 @@ class LivePlotter(Logger):
         )
 
         # Plot past bests
-        if len(self.best_embedding_history) > 1:
-            past_bests = np.array(self.best_embedding_history[:-1])
+        if len(self.best_embedding_history) > 0:
+            history = np.array(self.best_embedding_history)
             self.past_bests_scatter = self._ax3D.scatter(
-                past_bests[:, 0],
-                past_bests[:, 1],
-                past_bests[:, 2],
+                history[:, 0],
+                history[:, 1],
+                history[:, 2],
                 c='orange',
                 marker='D',
                 s=50,
@@ -539,6 +555,7 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         self._tournament_size = tournament_size
         self._novel_prompts = novel_prompts
         self.best = None
+        self.old_gen = ""
 
         SinglePopulationAlgorithmMixin.__init__(self)
 
@@ -554,14 +571,11 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
 
         ranking = ""
         for i in range(len(indices)):
-            if self._problem.prompt_optim:
-                ranking += f"{i+1}. <p> {self._problem.prompts[indices[i]]} </p> - {self._population[indices[i]].evals.item()}\n"
-            else:
-                ranking += f"{i+1}. <p> Embedding {indices[i]} </p> - {int(self._population[indices[i]].evals.item()*50)+50}\n"
+            ranking += f"{i+1}. <p> {self._problem.prompts[indices[i]]} </p> - {self._population[indices[i]].evals.item()*50+50} / 100\n"
 
         print("Pop Best", indices[0], ":", 
-              self._problem.prompts[indices[0]] if self._problem.prompt_optim else f"Embedding {indices[0]}", 
-              self._population[indices[0]].evals.item())
+              self._problem.prompts[indices[0]], 
+              self._population[indices[i]].evals.item()*50+50)
         
         self.best = self._problem.prompts[indices[0]]
 
@@ -592,7 +606,7 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         num_novel = int(self._population_size * self._novel_prompts)
         novel_prompts = []
         while len(novel_prompts) < num_novel:
-            answers = query_llm(f"Generate {num_novel - len(novel_prompts)} creative and diverse music prompts for generating music.")
+            answers = query_llm(f"Generate only {num_novel - len(novel_prompts)} creative and diverse music prompts for generating music, they should span multiple generes, moods, ...", temperature=TEMPERATURE_GENERATION)
 
             # match the number of <p> and </p> tags if not equal then ignore the prompt
             if answers.count("<p>") != answers.count("</p>"):
@@ -601,18 +615,26 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
             for answer in answers.split("</p>"):
                 if "<p>" in answer:
                     novel_prompts.append(answer[answer.index("<p>")+3:].strip())
+                if len(novel_prompts) >= num_novel:
+                    break
             
         new_prompts += novel_prompts
 
         # Update the population using LLM by giving it the scores of each prompt and asking for new ones
         while len(new_prompts) < self._population_size:
             LLM_prompt = f"""
-Generate {self._population_size-len(new_prompts)} creative and diverse music prompts for generating music based on the classification and scores of the previous prompts. You should balance exploration and exploitation to maximize the similarity to the target.
+Generate ONLY {self._population_size-len(new_prompts)} creative and diverse music prompts for generating music based on the classification and scores of the previous prompts. 
+You should balance exploration and exploitation to maximize the score.
+Before outputting the prompts, you should reason on the classification and scores of the previous prompts, and try to understand what makes a prompt successful for the user, and what makes it fail.
+Following this reasoning, you should generate a diverse set of prompts that are likely to be successful in the requested format and number.
 
-Here is the current population with their similarity scores and ranking:
+The previous generation was:
+{self.old_gen}
+
+And here is the current population with their similarity scores and ranking for the current generation:
 {ranking}
                 """
-            answers = query_llm(LLM_prompt)
+            answers = query_llm(LLM_prompt, temperature=TEMPERATURE_EVOLVE)
 
             # match the number of <p> and </p> tags if not equal then ignore the prompt
             if answers.count("<p>") != answers.count("</p>"):
@@ -621,9 +643,13 @@ Here is the current population with their similarity scores and ranking:
             for answer in answers.split("</p>"):
                 if "<p>" in answer:
                     new_prompts.append(answer[answer.index("<p>")+3:].strip())
+                if len(new_prompts) >= self._population_size:
+                    break
+            
+        self.old_gen = ranking
 
-        # Truncate to population size
-        new_prompts = new_prompts[:self._population_size]
+        print("Current Population:\n\t- ", "\n\t- ".join(self._problem.prompts))
+        print("New Population:\n\t- ", "\n\t- ".join(new_prompts))
 
         # Update the population
         self._problem.prompts = new_prompts
@@ -640,7 +666,8 @@ def evolve_prompts(problem, generations=NUM_GENERATIONS):
         optimizer = PromptSearcher(problem)
     else:
         # Initialize the CMA-ES optimizer for embedding optimization
-        optimizer = CMAES(problem, stdev_init=0.1, popsize=POPULATION_SIZE)
+        # optimizer = CMAES(problem, stdev_init=0.1, popsize=POPULATION_SIZE)
+        optimizer = evotorch.algorithms.PGPE(problem, popsize=POPULATION_SIZE, center_learning_rate=0.1, stdev_learning_rate=0.1, stdev_init=0.01)
 
     # Run the evolution strategy
     print("Starting evolution...")
