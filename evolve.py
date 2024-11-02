@@ -648,19 +648,18 @@ def evolve_prompts(problem, generations=NUM_GENERATIONS):
     optimizer.run(num_generations=generations)
     
     # Get the best solution
-    best_solution = optimizer.status["best"]
     best_fitness = optimizer.status["pop_best_eval"]
     print("\n--- Evolution Complete ---")
     print(f"Best Fitness (Cosine Similarity): {best_fitness}")
 
     if problem.prompt_optim:
         # Decode the best solution into a prompt
-        best_prompt = problem.prompts[int(best_solution.item())]
+        best_prompt = problem.prompts[optimizer._population.evals.argmax()]
         print(f"Best Prompt: '{best_prompt}'")
         return best_prompt, best_fitness
     else:
         # For embeddings, return the best embedding
-        best_embedding = best_solution
+        best_embedding = optimizer.status["pop_best"].values
         print(f"Best Embedding: {best_embedding}")
         return best_embedding, best_fitness
 
