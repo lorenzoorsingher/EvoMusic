@@ -102,7 +102,7 @@ if __name__ == "__main__":
     AUDIO_LEN = 5
 
     music_path = "../scraper/music"
-    membs_path = "usrembeds/data/embeddings/embeddings_1000.json"
+    membs_path = "usrembeds/data/embeddings/batched"
     stats_path = "../scraper/data/clean_stats.csv"
 
     dataset = ContrDataset(

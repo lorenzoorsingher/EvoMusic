@@ -12,6 +12,10 @@ from scipy.io import wavfile
 import scipy.signal as sps
 from io import BytesIO
 
+from tqdm import tqdm
+
+from random import randint
+
 
 class StatsDataset(Dataset):
     def __init__(
@@ -95,24 +99,36 @@ class ContrDataset(Dataset):
         self.multiplier = multiplier
         self.transform = transform
 
-        # load the songs embeddigns
-        with open(embs_dir, "r") as f:
-            self.embeddings = json.load(f)
+        print("[DATASET] Loading files and keys")
+        embedding_files = [
+            f for f in os.listdir(embs_dir) if os.path.isfile(os.path.join(embs_dir, f))
+        ]
+        embedding_files.remove("allkeys.json")
 
-        del self.embeddings["metadata"]
+        with open(os.path.join(embs_dir, "allkeys.json"), "r") as f:
+            self.allkeys = json.load(f)
 
+        # mapping the keys to a list because dict lookup is just too slow
+        self.emb_map = {key: idx for idx, key in enumerate(self.allkeys)}
+
+        self.emb_list = [[] for _ in self.allkeys]
+
+        print("[DATASET] Loading embeddings")
+        for file in tqdm(embedding_files):
+            with open(os.path.join(embs_dir, file), "r") as f:
+                data = json.load(f)
+                for key, value in data.items():
+                    self.emb_list[self.emb_map[key]].extend(value)
+
+        print("[DATASET] Loading users stats")
         # load the stats
         self.stats = pd.read_csv(stats_dir)
         self.stats["count"] = self.stats["count"].astype(int)
 
         # remove tracks with no embeddings
-        self.stats = self.stats[
-            self.stats["id"].isin(self.embeddings.keys())
-        ].reset_index(drop=True)
-
-        # # create a mapping
-        # self.id2song = self.embeddings.keys()
-        # self.song2id = {song: idx for idx, song in enumerate(self.id2song)}
+        self.stats = self.stats[self.stats["id"].isin(self.allkeys)].reset_index(
+            drop=True
+        )
 
         self.idx2usr = self.stats["userid"].unique().tolist()
 
@@ -135,15 +151,26 @@ class ContrDataset(Dataset):
 
         pos = self.user2songs[usr]
 
-        neg = list(set(self.embeddings.keys()) - set(pos))
+        neg = list(set(self.allkeys) - set(pos))
 
         posset = np.random.choice(pos, size=1, replace=False)
         negset = np.random.choice(neg, size=self.nneg, replace=False)
 
-        # [0] because we only have one embedding per song atm
-        # TODO pick a random embedding if there are multiple
-        posemb = torch.Tensor([self.embeddings[pos][0] for pos in posset])
-        negemb = torch.Tensor([self.embeddings[neg][0] for neg in negset])
+        poslist = [
+            self.emb_list[self.emb_map[pos]][
+                randint(0, len(self.emb_list[self.emb_map[pos]]) - 1)
+            ]
+            for pos in posset
+        ]
+        neglist = [
+            self.emb_list[self.emb_map[neg]][
+                randint(0, len(self.emb_list[self.emb_map[neg]]) - 1)
+            ]
+            for neg in negset
+        ]
+
+        posemb = torch.Tensor(poslist)
+        negemb = torch.Tensor(neglist)
 
         return idx, posemb, negemb
 
@@ -214,7 +241,7 @@ class MusicDataset(Dataset):
 if __name__ == "__main__":
 
     music_path = "../scraper/music"
-    membs_path = "usrembeds/data/embeddings/embeddings_1000.json"
+    membs_path = "usrembeds/data/embeddings/batched"
     stats_path = "../scraper/data/clean_stats.csv"
 
     dataset = ContrDataset(membs_path, stats_path, transform=None)
