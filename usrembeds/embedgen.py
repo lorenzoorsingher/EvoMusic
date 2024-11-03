@@ -18,7 +18,7 @@ if __name__ == "__main__":
     stats_path = "../scraper/data/clean_stats.csv"
     emb_path = "usrembeds/data/embeddings"
 
-    SAVE_RATE = 1000
+    SAVE_RATE = 500
 
     BATCH_SIZE = 32
     EMB_SIZE = 512
@@ -51,6 +51,11 @@ if __name__ == "__main__":
         "metadata": {"hop_size": HOP_SIZE, "audio_len": AUDIO_LEN, "sr": TARGET_SR}
     }
 
+    emb_dict_parts = {
+        "metadata": {"hop_size": HOP_SIZE, "audio_len": AUDIO_LEN, "sr": TARGET_SR}
+    }
+    part = 0
+
     for idx, track in enumerate(dataloader):
         start_time = time.time()
 
@@ -77,16 +82,21 @@ if __name__ == "__main__":
             emb_dict[track_id].append(mean_emb[i].cpu().detach().tolist())
 
         if idx % SAVE_RATE == 0:
-            with open(os.path.join(emb_path, f"embeddings_{idx}.json"), "w") as f:
+            with open(os.path.join(emb_path, f"embeddings_part_{part}.json"), "w") as f:
                 json.dump(emb_dict, f)
+                part += 1
+                emb_dict = {}
+            # with open(os.path.join(emb_path, f"embeddings_{idx}.json"), "w") as f:
+            #     json.dump(emb_dict_parts, f)
+            #     emb_dict_parts = {}
 
-        with open(os.path.join(emb_path, f"embeddings_chkp.json"), "w") as f:
-            json.dump(emb_dict, f)
+        # with open(os.path.join(emb_path, f"embeddings_chkp.json"), "w") as f:
+        #     json.dump(emb_dict, f)
 
         end_time = time.time()
         # print(f"{(end_time - start_time)/BATCH_SIZE} seconds per track")
 
         print(f"{idx}/{len(dataloader)}")
     # breakpoint()
-    with open(os.path.join(emb_path, f"embeddings_last.json"), "w") as f:
+    with open(os.path.join(emb_path, f"embeddings_part_{part}.json"), "w") as f:
         json.dump(emb_dict, f)
