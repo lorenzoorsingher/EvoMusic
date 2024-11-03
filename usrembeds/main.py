@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 import os
 import wandb
 import datetime
+import argparse
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
 
@@ -99,16 +100,61 @@ def eval_loop(model, val_loader):
     return correct / total
 
 
+def get_args():
+    """
+    Function to get the arguments from the command line
+
+    Returns:
+    - args (dict): arguments
+    """
+    parser = argparse.ArgumentParser(
+        prog="main.py",
+        description="""Get the params""",
+    )
+
+    parser.add_argument(
+        "-E",
+        "--embeds",
+        type=int,
+        help="User embdedding size",
+        default=100,
+    )
+
+    parser.add_argument(
+        "-B",
+        "--batch",
+        type=int,
+        help="Batch size",
+        default=16,
+    )
+
+    parser.add_argument(
+        "-L",
+        "--log",
+        action="store_true",
+        help="Log via wandb",
+        default=True,
+    )
+
+    args = vars(parser.parse_args())
+    return args
+
+
 if __name__ == "__main__":
 
-    BATCH_SIZE = 16
-    EMB_SIZE = 512
+    args = get_args()
+
+    BATCH_SIZE = args["batch"]
+    EMB_SIZE = args["embeds"]
+
+    LOG = True
+    LOG_EVERY = 100
+
     HOP_SIZE = 0.2
     AUDIO_LEN = 5
     EPOCHS = 1000
     TEMP = 0.07
-    LOG = True
-    LOG_EVERY = 100
+
     if LOG:
         load_dotenv()
         WANDB_SECRET = os.getenv("WANDB_SECRET")
@@ -121,6 +167,7 @@ if __name__ == "__main__":
             name="run_" + timestamp,
             config={
                 "emb_size": EMB_SIZE,
+                "batch_size": BATCH_SIZE,
                 "temp": TEMP,
             },
         )
@@ -140,16 +187,16 @@ if __name__ == "__main__":
 
     NUSERS = dataset.nusers
     train_dataloader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=16, shuffle=True
+        train_dataset, batch_size=BATCH_SIZE, shuffle=True
     )
     val_dataloader = torch.utils.data.DataLoader(
-        val_dataset, batch_size=16, shuffle=True
+        val_dataset, batch_size=BATCH_SIZE, shuffle=True
     )
 
     model = Aligner(
         n_users=NUSERS,
-        emb_size=50,
-        prj_size=EMB_SIZE,
+        emb_size=EMB_SIZE,
+        prj_size=512,
         prj_type="ln",
     ).to(DEVICE)
 
