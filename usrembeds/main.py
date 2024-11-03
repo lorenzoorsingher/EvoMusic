@@ -129,6 +129,14 @@ def get_args():
     )
 
     parser.add_argument(
+        "-N",
+        "--neg",
+        type=int,
+        help="Number of negative samples",
+        default=20,
+    )
+
+    parser.add_argument(
         "-L",
         "--log",
         action="store_true",
@@ -146,6 +154,7 @@ if __name__ == "__main__":
 
     BATCH_SIZE = args["batch"]
     EMB_SIZE = args["embeds"]
+    NEG = args["neg"]
 
     LOG = True
     LOG_EVERY = 100
@@ -178,7 +187,7 @@ if __name__ == "__main__":
     dataset = ContrDataset(
         membs_path,
         stats_path,
-        nneg=20,
+        nneg=NEG,
         multiplier=10,
         transform=None,
     )
