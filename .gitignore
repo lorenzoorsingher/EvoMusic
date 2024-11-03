@@ -165,3 +165,7 @@ cython_debug/
 
 *.wav
 *.json
+*.zip
+
+# wandb
+wandb/

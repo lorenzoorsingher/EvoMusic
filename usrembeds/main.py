@@ -11,6 +11,11 @@ from torch import optim
 
 from tqdm import tqdm
 
+from dotenv import load_dotenv
+import os
+import wandb
+import datetime
+
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
 
 
@@ -100,6 +105,25 @@ if __name__ == "__main__":
     EMB_SIZE = 512
     HOP_SIZE = 0.2
     AUDIO_LEN = 5
+    EPOCHS = 1000
+    TEMP = 0.07
+    LOG = True
+
+    if LOG:
+        load_dotenv()
+        WANDB_SECRET = os.getenv("WANDB_SECRET")
+        wandb.login(key=WANDB_SECRET)
+    if LOG:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        wandb.init(
+            # set the wandb project where this run will be logged
+            project="BIO",
+            name="run_" + timestamp,
+            config={
+                "emb_size": EMB_SIZE,
+                "temp": TEMP,
+            },
+        )
 
     music_path = "../scraper/music"
     membs_path = "usrembeds/data/embeddings/batched"
@@ -125,15 +149,12 @@ if __name__ == "__main__":
 
     model = Aligner(
         n_users=NUSERS,
-        emb_size=20,
+        emb_size=50,
         prj_size=EMB_SIZE,
         prj_type="ln",
     ).to(DEVICE)
 
-    EPOCHS = 1000
-
     opt = optim.AdamW(model.parameters(), lr=0.001)
-    TEMP = 0.07
 
     for epoch in range(EPOCHS):
 
@@ -174,7 +195,19 @@ if __name__ == "__main__":
 
             loss.backward()
             opt.step()
+
         val_acc = eval_loop(model, val_dataloader)
+
+        if LOG:
+            wandb.log(
+                {
+                    "loss": np.mean(losses),
+                    "val_acc": val_acc,
+                }
+            )
 
         print(f"loss {np.mean(losses)} val_acc {round(val_acc,3)}")
         # print(loss)
+
+if LOG:
+    wandb.finish()
