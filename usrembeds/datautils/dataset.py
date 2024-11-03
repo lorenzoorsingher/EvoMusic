@@ -103,6 +103,9 @@ class ContrDataset(Dataset):
         with open(os.path.join(embs_dir, "allkeys.json"), "r") as f:
             self.allkeys = json.load(f)
 
+        self.allkeys.remove("metadata")
+
+        # del self.allkeys["metadata"]
         # mapping the keys to a list because dict lookup is just too slow
         self.emb_map = {key: idx for idx, key in enumerate(self.allkeys)}
 
@@ -155,18 +158,35 @@ class ContrDataset(Dataset):
         posset = np.random.choice(pos, size=1, replace=False)
         negset = np.random.choice(neg, size=self.nneg, replace=False)
 
-        poslist = [
-            self.emb_list[self.emb_map[pos]][
-                randint(0, len(self.emb_list[self.emb_map[pos]]) - 1)
-            ]
-            for pos in posset
-        ]
-        neglist = [
-            self.emb_list[self.emb_map[neg]][
-                randint(0, len(self.emb_list[self.emb_map[neg]]) - 1)
-            ]
-            for neg in negset
-        ]
+        # poslist = [
+        #     self.emb_list[self.emb_map[pos]][
+        #         randint(0, len(self.emb_list[self.emb_map[pos]]))
+        #     ]
+        #     for pos in posset
+        # ]
+
+        poslist = []
+        for pos in posset:
+            embs = self.emb_list[self.emb_map[pos]]
+            # if len(embs) == 0:
+            #     print(f"Empty embedding for {pos}")
+            #     breakpoint()
+            poslist.append(embs[randint(0, len(embs) - 1)])
+
+        neglist = []
+        for neg in negset:
+            embs = self.emb_list[self.emb_map[neg]]
+            # if len(embs) == 0:
+            #     print(f"Empty embedding for {neg}")
+            #     breakpoint()
+            neglist.append(embs[randint(0, len(embs) - 1)])
+
+        # neglist = [
+        #     self.emb_list[self.emb_map[neg]][
+        #         randint(0, len(self.emb_list[self.emb_map[neg]]))
+        #     ]
+        #     for neg in negset
+        # ]
 
         posemb = torch.Tensor(poslist)
         negemb = torch.Tensor(neglist)
