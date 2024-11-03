@@ -113,7 +113,11 @@ class ContrDataset(Dataset):
             with open(os.path.join(embs_dir, file), "r") as f:
                 data = json.load(f)
                 for key, value in data.items():
-                    self.emb_list[self.emb_map[key]].extend(value)
+                    if key != "metadata":
+                        # print(len(value[0]))
+                        # if len(value[0]) != 512:
+                        #     breakpoint()
+                        self.emb_list[self.emb_map[key]].extend(value)
 
         print("[DATASET] Loading users stats")
         # load the stats
@@ -166,6 +170,8 @@ class ContrDataset(Dataset):
 
         posemb = torch.Tensor(poslist)
         negemb = torch.Tensor(neglist)
+
+        # print(negemb.shape)
 
         return idx, posemb, negemb
 
@@ -237,11 +243,11 @@ if __name__ == "__main__":
 
     music_path = "../scraper/music"
     membs_path = "usrembeds/data/embeddings/batched"
-    stats_path = "../scraper/data/clean_stats.csv"
+    stats_path = "clean_stats.csv"
 
     dataset = ContrDataset(membs_path, stats_path, transform=None)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=True)
 
-    for track in dataloader:
+    for track in tqdm(dataloader):
         idx, posemb, negemb = track
-        breakpoint()
+        # breakpoint()

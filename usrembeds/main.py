@@ -108,7 +108,7 @@ if __name__ == "__main__":
     EPOCHS = 1000
     TEMP = 0.07
     LOG = True
-
+    LOG_EVERY = 100
     if LOG:
         load_dotenv()
         WANDB_SECRET = os.getenv("WANDB_SECRET")
@@ -125,9 +125,8 @@ if __name__ == "__main__":
             },
         )
 
-    music_path = "../scraper/music"
     membs_path = "usrembeds/data/embeddings/batched"
-    stats_path = "../scraper/data/clean_stats.csv"
+    stats_path = "clean_stats.csv"
 
     dataset = ContrDataset(
         membs_path,
@@ -160,7 +159,8 @@ if __name__ == "__main__":
 
         print(f"Epoch {epoch}")
         losses = []
-        for tracks in tqdm(train_dataloader):
+
+        for itr, tracks in tqdm(enumerate(train_dataloader)):
 
             # [B]
             # [B, 1, EMB]
@@ -190,6 +190,13 @@ if __name__ == "__main__":
             out = urs_x.unsqueeze(1)
 
             loss = contrastive_loss(out, posemb, negemb)
+            # breakpoint()
+            if itr % LOG_EVERY == 0 and LOG:
+                wandb.log(
+                    {
+                        "loss": loss.item(),
+                    }
+                )
 
             losses.append(loss.item())
 
@@ -201,7 +208,7 @@ if __name__ == "__main__":
         if LOG:
             wandb.log(
                 {
-                    "loss": np.mean(losses),
+                    "mean_loss": np.mean(losses),
                     "val_acc": val_acc,
                 }
             )
