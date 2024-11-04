@@ -2,7 +2,7 @@ import torchopenl3
 import torch
 import numpy as np
 
-from datautils.dataset import MusicDataset, StatsDataset, ContrDataset
+from datautils.dataset import MusicDataset, ContrDataset
 from models.model import Aligner
 from utils import get_args
 import torch.nn as nn
@@ -234,7 +234,7 @@ if __name__ == "__main__":
         n_users=NUSERS,
         emb_size=EMB_SIZE,
         prj_size=512,
-        prj_type="bn",
+        prj_type="linear",
     ).to(DEVICE)
 
     opt = optim.AdamW(model.parameters(), lr=0.001)

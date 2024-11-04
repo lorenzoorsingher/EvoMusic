@@ -18,12 +18,12 @@ if __name__ == "__main__":
     stats_path = "../scraper/data/clean_stats.csv"
     emb_path = "usrembeds/data/embeddings"
 
-    SAVE_RATE = 500
+    SAVE_RATE = 500  # every 500 tracks dump the json otherwise it gets too large
 
     BATCH_SIZE = 32
-    EMB_SIZE = 512
+    EMB_SIZE = 512  # either 512 or 6144
 
-    HOP_SIZE = 0.1
+    HOP_SIZE = 0.1  # hop size defined in the paper
     AUDIO_LEN = 3
     TARGET_SR = torchopenl3.core.TARGET_SR
 
@@ -51,9 +51,6 @@ if __name__ == "__main__":
         "metadata": {"hop_size": HOP_SIZE, "audio_len": AUDIO_LEN, "sr": TARGET_SR}
     }
 
-    emb_dict_parts = {
-        "metadata": {"hop_size": HOP_SIZE, "audio_len": AUDIO_LEN, "sr": TARGET_SR}
-    }
     part = 0
 
     for idx, track in enumerate(dataloader):
@@ -86,12 +83,6 @@ if __name__ == "__main__":
                 json.dump(emb_dict, f)
                 part += 1
                 emb_dict = {}
-            # with open(os.path.join(emb_path, f"embeddings_{idx}.json"), "w") as f:
-            #     json.dump(emb_dict_parts, f)
-            #     emb_dict_parts = {}
-
-        # with open(os.path.join(emb_path, f"embeddings_chkp.json"), "w") as f:
-        #     json.dump(emb_dict, f)
 
         end_time = time.time()
         # print(f"{(end_time - start_time)/BATCH_SIZE} seconds per track")
