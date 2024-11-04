@@ -71,6 +71,14 @@ def get_args():
     )
 
     parser.add_argument(
+        "-T",
+        "--temp",
+        type=float,
+        help="Temperature for the InfoNCE loss",
+        default=0.07,
+    )
+
+    parser.add_argument(
         "-NL",
         "--no-log",
         action="store_true",

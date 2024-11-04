@@ -181,6 +181,7 @@ if __name__ == "__main__":
     EMB_SIZE = args["embeds"]
     NEG = args["neg"]
     SUBSET = args["subset"]
+    TEMP = args["temp"]
 
     LOG = not args["no_log"]
     LOG_EVERY = 100
@@ -188,7 +189,6 @@ if __name__ == "__main__":
     HOP_SIZE = 0.2
     AUDIO_LEN = 5
     EPOCHS = 1000
-    TEMP = 0.07
 
     if LOG:
         load_dotenv()
