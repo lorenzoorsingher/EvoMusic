@@ -203,6 +203,7 @@ if __name__ == "__main__":
             config={
                 "emb_size": EMB_SIZE,
                 "batch_size": BATCH_SIZE,
+                "neg_samples": NEG,
                 "temp": TEMP,
             },
         )
