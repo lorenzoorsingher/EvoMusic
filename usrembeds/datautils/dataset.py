@@ -86,6 +86,7 @@ class ContrDataset(Dataset):
         stats_dir,
         nneg=10,
         multiplier=10,
+        subset=1000,
         transform=None,
     ):
         self.embs_dir = embs_dir
@@ -112,7 +113,9 @@ class ContrDataset(Dataset):
         self.emb_list = [[] for _ in self.allkeys]
 
         print("[DATASET] Loading embeddings")
-        for file in tqdm(embedding_files):
+        for num, file in tqdm(enumerate(embedding_files)):
+            if num >= subset:
+                break
             with open(os.path.join(embs_dir, file), "r") as f:
                 data = json.load(f)
                 for key, value in data.items():

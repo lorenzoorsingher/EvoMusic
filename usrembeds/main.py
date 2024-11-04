@@ -4,7 +4,7 @@ import numpy as np
 
 from datautils.dataset import MusicDataset, StatsDataset, ContrDataset
 from models.model import Aligner
-from utils import plot_music_batch
+from utils import get_args
 import torch.nn as nn
 
 from torch import optim
@@ -15,7 +15,9 @@ from dotenv import load_dotenv
 import os
 import wandb
 import datetime
-import argparse
+
+from sklearn.metrics import roc_curve, roc_auc_score, average_precision_score
+
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
 
@@ -60,14 +62,8 @@ def eval_loop(model, val_loader):
         urs_x, embs = model(idx, ellemb)
 
         # breakpoint()
-        posemb_out = embs[
-            :,
-            0,
-        ].unsqueeze(dim=1)
-        negemb_out = embs[
-            :,
-            1:,
-        ]
+        posemb_out = embs[:, 0, :].unsqueeze(dim=1)
+        negemb_out = embs[:, 1:, :]
 
         # breakpoint()
         out = urs_x.unsqueeze(1)
@@ -100,52 +96,81 @@ def eval_loop(model, val_loader):
     return correct / total
 
 
-def get_args():
-    """
-    Function to get the arguments from the command line
+def eval_auc_loop(model, val_loader):
 
-    Returns:
-    - args (dict): arguments
-    """
-    parser = argparse.ArgumentParser(
-        prog="main.py",
-        description="""Get the params""",
-    )
+    model.eval()
 
-    parser.add_argument(
-        "-E",
-        "--embeds",
-        type=int,
-        help="User embdedding size",
-        default=100,
-    )
+    losses = []
 
-    parser.add_argument(
-        "-B",
-        "--batch",
-        type=int,
-        help="Batch size",
-        default=16,
-    )
+    correct = 0
+    total = 0
 
-    parser.add_argument(
-        "-N",
-        "--neg",
-        type=int,
-        help="Number of negative samples",
-        default=20,
-    )
+    positives = torch.empty(0).to(DEVICE)
+    negatives = torch.empty(0).to(DEVICE)
 
-    parser.add_argument(
-        "-L",
-        "--log",
-        action="store_true",
-        help="Log via wandb",
-        default=True,
-    )
+    for tracks in tqdm(val_loader):
 
-    args = vars(parser.parse_args())
-    return args
+        # [B]
+        # [B, 1, EMB]
+        # [B, NNEG, EMB]
+        idx, posemb, negemb = tracks
+
+        idx = idx.to(DEVICE)
+        posemb = posemb.to(DEVICE)
+        negemb = negemb.to(DEVICE)
+
+        ellemb = torch.cat((posemb, negemb), dim=1)
+
+        urs_x, embs = model(idx, ellemb)
+
+        # breakpoint()
+        posemb_out = embs[:, 0, :].unsqueeze(dim=1)
+        negemb_out = embs[:, 1:, :]
+
+        # breakpoint()
+        out = urs_x.unsqueeze(1)
+        # breakpoint()
+
+        # breakpoint()
+        cos = nn.CosineSimilarity(dim=2, eps=1e-6)
+
+        possim = cos(out, posemb_out).squeeze(1)
+
+        out = out.repeat(1, negemb_out.shape[1], 1)
+        negsim = cos(out, negemb_out)
+
+        negsim = negsim.view(-1, negemb_out.shape[1])
+        negflat = negsim.flatten()
+
+        positives = torch.cat((positives, possim))
+        negatives = torch.cat((negatives, negflat))
+    np_pos = positives.cpu().detach().numpy()
+    np_neg = negatives.cpu().detach().numpy()
+    scores = np.concatenate((np_pos, np_neg))
+    labels = [1] * len(np_pos) + [0] * len(np_neg)
+    # fpr, tpr, thresholds = roc_curve(labels, scores)
+
+    roc_auc = roc_auc_score(labels, scores)
+    # print(f"ROC AUC: {roc_auc}")
+
+    # Calculate PR AUC
+    pr_auc = average_precision_score(labels, scores)
+    # print(f"Precision-Recall AUC: {pr_auc}")
+
+    # import matplotlib.pyplot as plt
+
+    # plt.plot(fpr, tpr, label="ROC Curve")
+    # plt.xlabel("False Positive Rate")
+    # plt.ylabel("True Positive Rate")
+    # plt.title("ROC Curve for Embedding Similarity")
+    # plt.legend(loc="best")
+    # plt.show()
+    # breakpoint()
+    # # scores = [possim] + negsim
+    # # labels = [1] + [0] * len(negsim)
+
+    model.train()
+    return roc_auc, pr_auc
 
 
 if __name__ == "__main__":
@@ -155,8 +180,9 @@ if __name__ == "__main__":
     BATCH_SIZE = args["batch"]
     EMB_SIZE = args["embeds"]
     NEG = args["neg"]
+    SUBSET = args["subset"]
 
-    LOG = True
+    LOG = not args["no_log"]
     LOG_EVERY = 100
 
     HOP_SIZE = 0.2
@@ -189,6 +215,7 @@ if __name__ == "__main__":
         stats_path,
         nneg=NEG,
         multiplier=10,
+        subset=SUBSET,
         transform=None,
     )
 
@@ -206,7 +233,7 @@ if __name__ == "__main__":
         n_users=NUSERS,
         emb_size=EMB_SIZE,
         prj_size=512,
-        prj_type="ln",
+        prj_type="bn",
     ).to(DEVICE)
 
     opt = optim.AdamW(model.parameters(), lr=0.001)
@@ -233,14 +260,8 @@ if __name__ == "__main__":
             urs_x, embs = model(idx, ellemb)
 
             # breakpoint()
-            posemb_out = embs[
-                :,
-                0,
-            ].unsqueeze(dim=1)
-            negemb_out = embs[
-                :,
-                1:,
-            ]
+            posemb_out = embs[:, 0, :].unsqueeze(dim=1)
+            negemb_out = embs[:, 1:, :]
 
             # breakpoint()
             out = urs_x.unsqueeze(1)
@@ -259,17 +280,20 @@ if __name__ == "__main__":
             loss.backward()
             opt.step()
 
-        val_acc = eval_loop(model, val_dataloader)
+        roc_auc, pr_auc = eval_auc_loop(model, val_dataloader)
 
         if LOG:
             wandb.log(
                 {
                     "mean_loss": np.mean(losses),
-                    "val_acc": val_acc,
+                    "roc_auc": roc_auc,
+                    "pr_auc": pr_auc,
                 }
             )
 
-        print(f"loss {np.mean(losses)} val_acc {round(val_acc,3)}")
+        print(
+            f"loss {round(np.mean(losses),3)} roc_auc {round(roc_auc,3)} pr_auc {round(pr_auc,3)}"
+        )
         # print(loss)
 
 if LOG:

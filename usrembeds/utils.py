@@ -2,6 +2,7 @@ import torch
 from datautils.dataset import MusicDataset
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
+import argparse
 
 
 def plot_music_batch(emb, device):
@@ -23,3 +24,59 @@ def plot_music_batch(emb, device):
 
     plt.title("t-SNE Embedding")
     plt.show()
+
+
+def get_args():
+    """
+    Function to get the arguments from the command line
+
+    Returns:
+    - args (dict): arguments
+    """
+    parser = argparse.ArgumentParser(
+        prog="main.py",
+        description="""Get the params""",
+    )
+
+    parser.add_argument(
+        "-E",
+        "--embeds",
+        type=int,
+        help="User embdedding size",
+        default=100,
+    )
+
+    parser.add_argument(
+        "-B",
+        "--batch",
+        type=int,
+        help="Batch size",
+        default=16,
+    )
+
+    parser.add_argument(
+        "-N",
+        "--neg",
+        type=int,
+        help="Number of negative samples",
+        default=20,
+    )
+
+    parser.add_argument(
+        "-S",
+        "--subset",
+        type=int,
+        help="Only load a subset of the data",
+        default=100,
+    )
+
+    parser.add_argument(
+        "-NL",
+        "--no-log",
+        action="store_true",
+        help="Don't log via wandb",
+        default=False,
+    )
+
+    args = vars(parser.parse_args())
+    return args
