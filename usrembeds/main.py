@@ -234,7 +234,7 @@ if __name__ == "__main__":
         n_users=NUSERS,
         emb_size=EMB_SIZE,
         prj_size=512,
-        prj_type="linear",
+        prj_type="bn",
     ).to(DEVICE)
 
     opt = optim.AdamW(model.parameters(), lr=0.001)
