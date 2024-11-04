@@ -267,7 +267,7 @@ if __name__ == "__main__":
             # breakpoint()
             out = urs_x.unsqueeze(1)
 
-            loss = contrastive_loss(out, posemb, negemb)
+            loss = contrastive_loss(out, posemb, negemb, temp=TEMP)
             # breakpoint()
             if itr % LOG_EVERY == 0 and LOG:
                 wandb.log(
