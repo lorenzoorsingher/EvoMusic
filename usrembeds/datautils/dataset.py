@@ -71,8 +71,20 @@ class ContrDataset(Dataset):
         self.idx2usr = self.stats["userid"].unique().tolist()
 
         # Group by 'userid' and aggregate 'id' into a list
-        self.user2songs = self.stats.groupby("userid")["id"].apply(list).to_dict()
+        # self.user2songs = self.stats.groupby("userid")["id"].apply(list).to_dict()
 
+        # breakpoint()
+
+        self.usersums = self.stats.groupby("userid")["count"].sum()
+        self.userstd = self.stats.groupby("userid")["count"].std()
+        self.usercount = self.stats.groupby("userid")["count"].count()
+
+        self.user2songs = (
+            self.stats.groupby("userid")
+            .apply(lambda x: list(zip(x["id"], x["count"])))
+            .to_dict()
+        )
+        # breakpoint()
         # number of users
         self.nusers = self.stats["userid"].nunique()
 
@@ -86,28 +98,32 @@ class ContrDataset(Dataset):
         idx = idx % self.nusers
         # TODO: implement way to use playcount to select positive samples
         usr = self.idx2usr[idx]
-
+        # breakpoint()
         pos = self.user2songs[usr]
-
+        # count = torch.Tensor(count).type(torch.int32)
         neg = list(set(self.allkeys) - set(pos))
 
-        posset = np.random.choice(pos, size=1, replace=False)
+        pos_sample = pos[randint(0, len(pos) - 1)]
+        posset, count = pos_sample
+
+        mean = self.usersums[usr] / self.usercount[usr]
+        top70 = mean + self.userstd[usr]
+        weight = min(1, count / top70)
+        # weight = torch.Tensor([weight])
+        # breakpoint()
+
         negset = np.random.choice(neg, size=self.nneg, replace=False)
 
-        # poslist = [
-        #     self.emb_list[self.emb_map[pos]][
-        #         randint(0, len(self.emb_list[self.emb_map[pos]]))
-        #     ]
-        #     for pos in posset
-        # ]
-
         poslist = []
-        for pos in posset:
-            embs = self.emb_list[self.emb_map[pos]]
-            # if len(embs) == 0:
-            #     print(f"Empty embedding for {pos}")
-            #     breakpoint()
-            poslist.append(embs[randint(0, len(embs) - 1)])
+        # for pos in posset:
+        #     embs = self.emb_list[self.emb_map[pos]]
+        #     # if len(embs) == 0:
+        #     #     print(f"Empty embedding for {pos}")
+        #     #     breakpoint()
+        #     poslist.append(embs[randint(0, len(embs) - 1)])
+
+        embs = self.emb_list[self.emb_map[posset]]
+        poslist.append(embs[randint(0, len(embs) - 1)])
 
         neglist = []
         for neg in negset:
@@ -128,8 +144,8 @@ class ContrDataset(Dataset):
         negemb = torch.Tensor(neglist)
 
         # print(negemb.shape)
-
-        return idx, posemb, negemb
+        # breakpoint()
+        return idx, posemb, negemb, weight
 
 
 class MusicDataset(Dataset):
@@ -203,5 +219,5 @@ if __name__ == "__main__":
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=True)
 
     for track in tqdm(dataloader):
-        idx, posemb, negemb = track
-        # breakpoint()
+        idx, posemb, negemb, weights = track
+        breakpoint()

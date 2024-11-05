@@ -22,8 +22,25 @@ from sklearn.metrics import roc_curve, roc_auc_score, average_precision_score
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
 
 
+def weighted_contrastive_loss(out, possim, negsim, weights, temp=0.07):
+    cos = nn.CosineSimilarity(dim=2, eps=1e-6)
+
+    possim = cos(out, posemb)
+
+    out = out.repeat(1, negemb.shape[1], 1)
+    negsim = cos(out, negemb)
+
+    logits = torch.cat((possim, negsim), dim=1) / temp
+    exp = torch.exp(logits)
+    loss = -torch.log(exp[:, 0] / torch.sum(exp, dim=1))
+
+    loss = loss * (weights + 1)
+
+    loss = torch.mean(loss)
+    return loss
+
+
 def contrastive_loss(out, possim, negsim, temp=0.07):
-    # breakpoint()
     cos = nn.CosineSimilarity(dim=2, eps=1e-6)
 
     possim = cos(out, posemb)
@@ -113,11 +130,12 @@ def eval_auc_loop(model, val_loader):
         # [B]
         # [B, 1, EMB]
         # [B, NNEG, EMB]
-        idx, posemb, negemb = tracks
+        idx, posemb, negemb, weights = tracks
 
         idx = idx.to(DEVICE)
         posemb = posemb.to(DEVICE)
         negemb = negemb.to(DEVICE)
+        weights = weights.to(DEVICE)
 
         ellemb = torch.cat((posemb, negemb), dim=1)
 
@@ -249,11 +267,13 @@ if __name__ == "__main__":
             # [B]
             # [B, 1, EMB]
             # [B, NNEG, EMB]
-            idx, posemb, negemb = tracks
+            idx, posemb, negemb, weights = tracks
 
             idx = idx.to(DEVICE)
             posemb = posemb.to(DEVICE)
             negemb = negemb.to(DEVICE)
+            weights = weights.to(DEVICE)
+
             opt.zero_grad()
 
             ellemb = torch.cat((posemb, negemb), dim=1)
@@ -267,7 +287,7 @@ if __name__ == "__main__":
             # breakpoint()
             out = urs_x.unsqueeze(1)
 
-            loss = contrastive_loss(out, posemb, negemb, temp=TEMP)
+            loss = weighted_contrastive_loss(out, posemb, negemb, weights, temp=TEMP)
             # breakpoint()
             if itr % LOG_EVERY == 0 and LOG:
                 wandb.log(
