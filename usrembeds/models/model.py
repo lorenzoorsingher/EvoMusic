@@ -5,7 +5,9 @@ import torch.nn.functional as F
 
 
 class Aligner(nn.Module):
-    def __init__(self, n_users, emb_size, prj_size, prj_type="linear", lt=False):
+    def __init__(
+        self, n_users, emb_size, prj_size, prj_type="linear", lt=False, temp=0.07
+    ):
 
         super(Aligner, self).__init__()
 
@@ -20,7 +22,7 @@ class Aligner(nn.Module):
         self.bn = nn.BatchNorm1d(prj_size)
         self.fc3 = nn.Linear(prj_size, prj_size)
 
-        self.temp = 0.07
+        self.temp = temp
         if lt:
             print("[MODEL] Using learnable temperature")
             self.temp = nn.Parameter(torch.tensor(self.temp))

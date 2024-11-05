@@ -243,6 +243,7 @@ if __name__ == "__main__":
         prj_size=512,
         prj_type="bn",
         lt=LT,
+        temp=TEMP,
     ).to(DEVICE)
 
     opt = optim.AdamW(model.parameters(), lr=0.001)
