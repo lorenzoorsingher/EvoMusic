@@ -79,6 +79,14 @@ def get_args():
     )
 
     parser.add_argument(
+        "-M",
+        "--multiplier",
+        type=int,
+        help="Dataset multiplier",
+        default=10,
+    )
+
+    parser.add_argument(
         "-NL",
         "--no-log",
         action="store_true",

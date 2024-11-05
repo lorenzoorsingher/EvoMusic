@@ -34,7 +34,7 @@ def weighted_contrastive_loss(out, possim, negsim, weights, temp=0.07):
     exp = torch.exp(logits)
     loss = -torch.log(exp[:, 0] / torch.sum(exp, dim=1))
 
-    loss = loss * (weights + 1)
+    loss = loss * ((weights * 0.5) + 1)
 
     loss = torch.mean(loss)
     return loss
@@ -117,11 +117,6 @@ def eval_auc_loop(model, val_loader):
 
     model.eval()
 
-    losses = []
-
-    correct = 0
-    total = 0
-
     positives = torch.empty(0).to(DEVICE)
     negatives = torch.empty(0).to(DEVICE)
 
@@ -200,7 +195,7 @@ if __name__ == "__main__":
     NEG = args["neg"]
     SUBSET = args["subset"]
     TEMP = args["temp"]
-
+    MUL = args["multiplier"]
     LOG = not args["no_log"]
     LOG_EVERY = 100
 
@@ -233,7 +228,7 @@ if __name__ == "__main__":
         membs_path,
         stats_path,
         nneg=NEG,
-        multiplier=10,
+        multiplier=MUL,
         subset=SUBSET,
         transform=None,
     )
