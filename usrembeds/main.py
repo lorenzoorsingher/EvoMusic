@@ -3,7 +3,7 @@ import torch
 import numpy as np
 
 from datautils.dataset import MusicDataset, ContrDataset
-from models.model import Aligner, TunedAligner
+from models.model import Aligner
 from utils import get_args
 import torch.nn as nn
 
@@ -36,21 +36,6 @@ def weighted_contrastive_loss(out, possim, negsim, weights, loss_weight, temp=0.
 
     loss = loss * ((weights * loss_weight) + 1)
 
-    loss = torch.mean(loss)
-    return loss
-
-
-def contrastive_loss(out, possim, negsim, temp=0.07):
-    cos = nn.CosineSimilarity(dim=2, eps=1e-6)
-
-    possim = cos(out, posemb)
-
-    out = out.repeat(1, negemb.shape[1], 1)
-    negsim = cos(out, negemb)
-
-    logits = torch.cat((possim, negsim), dim=1) / temp
-    exp = torch.exp(logits)
-    loss = -torch.log(exp[:, 0] / torch.sum(exp, dim=1))
     loss = torch.mean(loss)
     return loss
 
@@ -195,6 +180,7 @@ if __name__ == "__main__":
     NEG = args["neg"]
     SUBSET = args["subset"]
     TEMP = args["temp"]
+    LT = args["learnable_temp"]
     MUL = args["multiplier"]
     WEIGHT = args["weight"]
 
@@ -220,6 +206,7 @@ if __name__ == "__main__":
                 "batch_size": BATCH_SIZE,
                 "neg_samples": NEG,
                 "temp": TEMP,
+                "learnable_temp": LT,
                 "multiplier": MUL,
                 "loss weight": WEIGHT,
             },
@@ -247,19 +234,12 @@ if __name__ == "__main__":
         val_dataset, batch_size=BATCH_SIZE, shuffle=True
     )
 
-    # model = Aligner(
-    #     n_users=NUSERS,
-    #     emb_size=EMB_SIZE,
-    #     prj_size=512,
-    #     prj_type="bn",
-    # ).to(DEVICE)
-
-    model = TunedAligner(
+    model = Aligner(
         n_users=NUSERS,
         emb_size=EMB_SIZE,
         prj_size=512,
-        temp=TEMP,
         prj_type="bn",
+        lt=LT,
     ).to(DEVICE)
 
     opt = optim.AdamW(model.parameters(), lr=0.001)
@@ -309,8 +289,6 @@ if __name__ == "__main__":
 
             loss.backward()
             opt.step()
-
-            print(temp)
 
         roc_auc, pr_auc = eval_auc_loop(model, val_dataloader)
 

@@ -95,6 +95,14 @@ def get_args():
     )
 
     parser.add_argument(
+        "-LT",
+        "--learnable-temp",
+        action="store_true",
+        help="Make temp a learnable parameter",
+        default=False,
+    )
+
+    parser.add_argument(
         "-W",
         "--weight",
         type=float,
