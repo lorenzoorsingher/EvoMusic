@@ -6,6 +6,7 @@ from evotorch import Problem, Solution
 from evotorch.algorithms import CMAES, SearchAlgorithm
 from evotorch.algorithms.searchalgorithm import SinglePopulationAlgorithmMixin
 from diffusers import DiffusionPipeline
+from diffusers.utils.testing_utils import enable_full_determinism
 from sklearn.decomposition import PCA
 import joblib
 
@@ -53,26 +54,27 @@ API_KEY = os.getenv("API_KEY")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Evolutionary Algorithm Parameters
-POPULATION_SIZE = 10
+POPULATION_SIZE = 50
 ELITES = 0.1
-CROSS_MUTATION = 0.2
+CROSS_MUTATION = 0
 NOVEL_PROMPTS = 0.1
 TOURNAMENT_SIZE = 5
-NUM_GENERATIONS = 50
+NUM_GENERATIONS = 100
 
 
 NUM_INFERENCE_STEPS = 50
 DURATION = 5  # in seconds
 HOP_SIZE = 0.1
 
-TEMPERATURE_GENERATION = 0.9
+TEMPERATURE_GENERATION = 0.8
 TEMPERATURE_EVOLVE = 0.5
 
 # Optimization Mode
 # Set to True for prompt optimization, False for embedding optimization
 PROMPT_OPTIM = False
 EMB_SIZE = 768 # Embedding size for CLIP model
-MAX_SEQ_LEN = 77  # Maximum sequence length for CLIP model
+MAX_SEQ_LEN = 1  # Maximum sequence length for CLIP model
+USE_CMAES = True # Set to True to use CMA-ES instead of custom Searcher
 
 # -------------------------------------------------------------------------
 
@@ -122,7 +124,7 @@ def compute_pca():
     embeddings = []
     audios = os.listdir(audio_path)
 
-    pca = PCA(n_components=min(512,len(audios)))
+    pca = PCA(n_components=min(768,len(audios)))
     pca_3D = PCA(n_components=3)
 
     # look if already computed
@@ -182,7 +184,10 @@ pipe = pipe.to(DEVICE)
 def dummy_safety_checker(images, **kwargs):
     return images, [False] * len(images)
 pipe.safety_checker = dummy_safety_checker
+# enable full deterministic mode
+enable_full_determinism()
 
+generator = torch.Generator(device=DEVICE)
 print("Riffusion pipeline loaded.")
 
 def generate_music_riffusion(prompt: str=None, embeds=None, num_inference_steps: int = NUM_INFERENCE_STEPS, duration: int = DURATION, name = None):
@@ -191,10 +196,6 @@ def generate_music_riffusion(prompt: str=None, embeds=None, num_inference_steps:
     Returns the path to the generated audio file.
     """
 
-    #fixed noise generation
-    generator = torch.Generator(device=DEVICE)
-    generator.manual_seed(0)
-
     assert (prompt is not None) or (embeds is not None), "Either prompt or embeds must be provided."
 
     width = math.ceil(duration * (512 / 5))  # Calculate the width based on the duration
@@ -202,10 +203,12 @@ def generate_music_riffusion(prompt: str=None, embeds=None, num_inference_steps:
     width = width + (8 - width % 8) if width % 8 != 0 else width
     if prompt is not None:
         # print(f"Generating music with prompt: '{prompt}'")
+        generator.manual_seed(0)
         output = pipe(prompt, num_inference_steps=num_inference_steps, width=width, generator=generator)
     else:
         # print(f"Generating music with embeddings.")
         embeds = embeds.view(1, MAX_SEQ_LEN, EMB_SIZE).to(DEVICE)
+        generator.manual_seed(0)
         output = pipe(prompt_embeds=embeds, num_inference_steps=num_inference_steps, width=width, generator=generator)
 
     image = output.images[0]
@@ -271,7 +274,7 @@ class PromptOptimizationProblem(Problem):
             objective_sense="max",
             solution_length= 1 if prompt_optim else EMB_SIZE * MAX_SEQ_LEN,
             initial_bounds=(-1, 1),
-            device=DEVICE if prompt_optim else "cpu"
+            device="cpu"
         )
         self.target_embedding = target_embedding
         self.target_embedding_3D = target_embedding_3D
@@ -279,6 +282,7 @@ class PromptOptimizationProblem(Problem):
         self.generated = 0
         self.embeddings_3D = []
         self.prompt_optim = prompt_optim
+        self.device_problem = "cpu"
 
     def _evaluate(self, solution: Solution):
         """
@@ -329,13 +333,14 @@ class PromptOptimizationProblem(Problem):
 
     def _fill(self, values: torch.Tensor):
         prompts = []
-        
+        population = values.shape[0]
+
         prompt_length = ""
         if not self.prompt_optim:
             prompt_length = f" of maximum {MAX_SEQ_LEN} words each"
 
-        while len(prompts) < self.population_size:
-            answers = query_llm(f"Generate {self.population_size-len(prompts)} creative and diverse music prompts for generating music{prompt_length} you should generate higly diverse prompts both in structure and contents, spanning different music styles, instruments, tempos, energy, ...", temperature=TEMPERATURE_GENERATION)
+        while len(prompts) < population:
+            answers = query_llm(f"Generate {population-len(prompts)} diverse prompts for generating music{prompt_length} you should generate higly diverse prompts both in structure and contents, spanning different music styles, instruments, emotions, ...", temperature=TEMPERATURE_GENERATION)
 
             # match the number of <p> and </p> tags if not equal then ignore the prompt
             if answers.count("<p>") != answers.count("</p>"):
@@ -344,28 +349,21 @@ class PromptOptimizationProblem(Problem):
             for answer in answers.split("</p>"):
                 if "<p>" in answer:
                     prompts.append(answer[answer.index("<p>")+3:].strip())
-                if len(prompts) >= self.population_size:
+                if len(prompts) >= population:
                     break
 
         if self.prompt_optim:
             self.prompts = prompts
-            values = torch.tensor([i for i in range(self.population_size)], device=DEVICE).float()
+            values.copy_(torch.tensor([i for i in range(population)]).view(-1, 1))
         else:
             # use pipe text_encoder to encode the prompts
             with torch.no_grad():
                 outputs = pipe.encode_prompt(prompts, device=DEVICE, num_images_per_prompt=1, do_classifier_free_guidance=True)
                 embeddings = outputs[0]
-            values = embeddings.view(self.population_size, -1)
+            values.copy_(embeddings.view(population, -1)[:, :EMB_SIZE * MAX_SEQ_LEN])
         
         # del outputs, embeddings
         return values
-
-    def _reinitialize_solutions(self, solutions: torch.Tensor):
-        if self.prompt_optim:
-            return self._fill(solutions)
-        else:
-            # For embeddings, reinitialize if needed
-            return solutions
 
 matplotlib.use("TkAgg")
 class LivePlotter(Logger):
@@ -375,25 +373,32 @@ class LivePlotter(Logger):
         self._searcher = searcher
         self._problem = problem
         self._target_embedding_3D = problem.target_embedding_3D
+        self._target_embedding_2D = problem.target_embedding_3D[:2] / np.linalg.norm(problem.target_embedding_3D[:2])
 
         # Set up the target status
         self._target_status = target_status
 
-        # Create a figure with two subplots: one for 2D and one for 3D
-        self._fig = plt.figure(figsize=(14, 7), dpi=100)
+        # Create a figure with three subplots: 2D Evolution, 3D Embeddings, and 2D Embeddings
+        self._fig = plt.figure(figsize=(15, 7), dpi=100)  # Increased width to accommodate an extra subplot
 
         # 2D Plot for Iteration vs. Fitness
-        self._ax2D = self._fig.add_subplot(1, 2, 1)
+        self._ax2D = self._fig.add_subplot(1, 3, 1)
         self._ax2D.set_xlabel("Iteration")
         self._ax2D.set_ylabel(target_status)
         self._ax2D.set_title("Evolution Progress")
 
         # 3D Plot for Embeddings
-        self._ax3D = self._fig.add_subplot(1, 2, 2, projection='3d')
+        self._ax3D = self._fig.add_subplot(1, 3, 2, projection='3d')
         self._ax3D.set_xlabel("PCA 1")
         self._ax3D.set_ylabel("PCA 2")
         self._ax3D.set_zlabel("PCA 3")
-        self._ax3D.set_title("Embedding Space")
+        self._ax3D.set_title("3D Embedding Space")
+
+        # NEW: 2D Plot for Embeddings (PCA1 vs PCA2)
+        self._ax2D_emb = self._fig.add_subplot(1, 3, 3)
+        self._ax2D_emb.set_xlabel("PCA 1")
+        self._ax2D_emb.set_ylabel("PCA 2")
+        self._ax2D_emb.set_title("2D Embedding Space (PCA1 vs PCA2)")
 
         # Initialize data containers
         self.iterations = []
@@ -402,7 +407,7 @@ class LivePlotter(Logger):
 
         self.best_embedding_history = []
 
-        # Plot elements
+        # Plot elements for 3D Embedding Space
         self.current_population_scatter = self._ax3D.scatter([], [], [], c='blue', label='Current Population', alpha=0.6)
         self.best_scatter = self._ax3D.scatter([], [], [], c='green', marker='*', s=100, label='Best Solution')
         self.past_bests_scatter = self._ax3D.scatter([], [], [], c='orange', marker='D', s=50, label='Past Bests')
@@ -416,9 +421,23 @@ class LivePlotter(Logger):
             label='Target'
         )
 
+        # NEW: Plot elements for 2D Embedding Space
+        self.current_population_scatter_2D = self._ax2D_emb.scatter([], [], c='blue', label='Current Population', alpha=0.6)
+        self.best_scatter_2D = self._ax2D_emb.scatter([], [], c='green', marker='*', s=100, label='Best Solution')
+        self.past_bests_scatter_2D = self._ax2D_emb.scatter([], [], c='orange', marker='D', s=50, label='Past Bests')
+        self.target_scatter_2D = self._ax2D_emb.scatter(
+            self._target_embedding_2D[0],
+            self._target_embedding_2D[1],
+            c='red',
+            marker='X',
+            s=150,
+            label='Target'
+        )
+
         # Legends for both plots
         self._ax2D.legend(loc='upper right')
         self._ax3D.legend(loc='upper left')
+        self._ax2D_emb.legend(loc='upper left')  # Add legend for the new 2D plot
 
         # Set interactive mode on
         plt.ion()
@@ -435,7 +454,7 @@ class LivePlotter(Logger):
         best_fitness = max(self.fitness_values)
         self.best_fitness_history.append(best_fitness)
 
-        # Update 2D Plot
+        # Update 2D Evolution Progress Plot
         self._ax2D.clear()
         self._ax2D.plot(self.iterations, self.fitness_values, label='Current Fitness', color='blue')
         self._ax2D.plot(self.iterations, self.best_fitness_history, label='Best Fitness', color='green')
@@ -445,14 +464,14 @@ class LivePlotter(Logger):
         self._ax2D.legend(loc='upper right')
         self._ax2D.grid(True)
 
-        # Update 3D Plot
+        # Update 3D Embedding Space Plot
         # Clear previous current population scatter
         if hasattr(self, 'current_population_scatter'):
             self.current_population_scatter.remove()
 
         # Extract current population embeddings
         current_population_embeddings = np.array([
-            self._problem.embeddings_3D[i] for i in range(len(self._searcher._problem.embeddings_3D))
+            self._problem.embeddings_3D[i] for i in range(len(self._problem.embeddings_3D))
         ])
 
         # Scatter current population
@@ -520,15 +539,66 @@ class LivePlotter(Logger):
         by_label = dict(zip(labels, handles))
         self._ax3D.legend(by_label.values(), by_label.keys())
 
-        # center in 0,0,0
+        # Center in 0,0,0
         self._ax3D.set_xlim(-1, 1)
         self._ax3D.set_ylim(-1, 1)
         self._ax3D.set_zlim(-1, 1)
 
+        # Update 2D Embedding Space Plot
+        current_population_embeddings = current_population_embeddings[:, :2]
+        current_population_embeddings = current_population_embeddings / np.linalg.norm(current_population_embeddings, axis=1)[:, None]
+        self._ax2D_emb.clear()
+        # Current Population
+        self._ax2D_emb.scatter(
+            current_population_embeddings[:, 0],
+            current_population_embeddings[:, 1],
+            c='blue',
+            label='Current Population',
+            alpha=0.6
+        )    
+        past_bests = np.array([emb[:2] for emb in self.best_embedding_history])
+        past_bests = past_bests / np.linalg.norm(past_bests, axis=1)[:, None]
+        # Best Solution
+        self._ax2D_emb.scatter(
+            past_bests[-1, 0],
+            past_bests[-1, 1],
+            c='green',
+            marker='*',
+            s=100,
+            label='Best Solution'
+        )
+        # Past Bests
+        if len(self.best_embedding_history) > 1:
+            self._ax2D_emb.scatter(
+                past_bests[:-1, 0],
+                past_bests[:-1, 1],
+                c='orange',
+                marker='D',
+                s=50,
+                label='Past Bests'
+            )
+        # Target Embedding
+        self._ax2D_emb.scatter(
+            self._target_embedding_2D[0],
+            self._target_embedding_2D[1],
+            c='red',
+            marker='X',
+            s=150,
+            label='Target'
+        )
+        self._ax2D_emb.set_xlabel("PCA 1")
+        self._ax2D_emb.set_ylabel("PCA 2")
+        self._ax2D_emb.set_title("2D Embedding Space (PCA1 vs PCA2)")
+        self._ax2D_emb.legend(loc='upper left')
+        self._ax2D_emb.grid(True)
+
+        self._ax2D_emb.set_xlim(-1, 1)
+        self._ax2D_emb.set_ylim(-1, 1)
+
         # Draw and pause briefly to update the plot
         self._fig.canvas.draw()
         self._fig.canvas.flush_events()
-        plt.pause(0.01)
+        plt.pause(0.1)
 
         self._problem.embeddings_3D = []
 
@@ -606,7 +676,7 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         num_novel = int(self._population_size * self._novel_prompts)
         novel_prompts = []
         while len(novel_prompts) < num_novel:
-            answers = query_llm(f"Generate only {num_novel - len(novel_prompts)} creative and diverse music prompts for generating music, they should span multiple generes, moods, ...", temperature=TEMPERATURE_GENERATION)
+            answers = query_llm(f"Generate only {num_novel - len(novel_prompts)} diverse prompts for generating music, they should span multiple generes, moods, ...", temperature=TEMPERATURE_GENERATION)
 
             # match the number of <p> and </p> tags if not equal then ignore the prompt
             if answers.count("<p>") != answers.count("</p>"):
@@ -666,8 +736,10 @@ def evolve_prompts(problem, generations=NUM_GENERATIONS):
         optimizer = PromptSearcher(problem)
     else:
         # Initialize the CMA-ES optimizer for embedding optimization
-        # optimizer = CMAES(problem, stdev_init=0.1, popsize=POPULATION_SIZE)
-        optimizer = evotorch.algorithms.PGPE(problem, popsize=POPULATION_SIZE, center_learning_rate=0.1, stdev_learning_rate=0.1, stdev_init=0.01)
+        if USE_CMAES:
+            optimizer = CMAES(problem, stdev_init=0.1, popsize=POPULATION_SIZE)
+        else:
+            optimizer = evotorch.algorithms.PGPE(problem, popsize=POPULATION_SIZE, center_learning_rate=1, stdev_learning_rate=1, stdev_init=1)
 
     # Run the evolution strategy
     print("Starting evolution...")
