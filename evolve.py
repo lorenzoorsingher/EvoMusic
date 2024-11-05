@@ -52,6 +52,7 @@ API_KEY = os.getenv("API_KEY")
 
 # Device configuration
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+PROBLEM_DEVICE = "cpu"  # Problem is run on CPU to avoid memory issues
 
 # Evolutionary Algorithm Parameters
 POPULATION_SIZE = 50
@@ -73,7 +74,7 @@ TEMPERATURE_EVOLVE = 0.5
 # Set to True for prompt optimization, False for embedding optimization
 PROMPT_OPTIM = False
 EMB_SIZE = 768 # Embedding size for CLIP model
-MAX_SEQ_LEN = 1  # Maximum sequence length for CLIP model
+MAX_SEQ_LEN = 10  # Maximum sequence length for CLIP model (should be 77)
 USE_CMAES = True # Set to True to use CMA-ES instead of custom Searcher
 
 # -------------------------------------------------------------------------
@@ -269,12 +270,12 @@ class PromptOptimizationProblem(Problem):
     """
     Evotorch Problem for optimizing music prompts or embeddings.
     """
-    def __init__(self, target_embedding, target_embedding_3D, prompt_optim=PROMPT_OPTIM, population_size=POPULATION_SIZE):
+    def __init__(self, target_embedding, target_embedding_3D, prompt_optim=PROMPT_OPTIM, population_size=POPULATION_SIZE, device=PROBLEM_DEVICE):
         super().__init__(
             objective_sense="max",
             solution_length= 1 if prompt_optim else EMB_SIZE * MAX_SEQ_LEN,
             initial_bounds=(-1, 1),
-            device="cpu"
+            device=device
         )
         self.target_embedding = target_embedding
         self.target_embedding_3D = target_embedding_3D
@@ -282,7 +283,7 @@ class PromptOptimizationProblem(Problem):
         self.generated = 0
         self.embeddings_3D = []
         self.prompt_optim = prompt_optim
-        self.device_problem = "cpu"
+        self.device_problem = device
 
     def _evaluate(self, solution: Solution):
         """
