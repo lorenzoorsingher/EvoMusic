@@ -3,7 +3,7 @@ import torch
 import numpy as np
 
 from datautils.dataset import MusicDataset, ContrDataset
-from models.model import Aligner
+from models.model import Aligner, TunedAligner
 from utils import get_args
 import torch.nn as nn
 
@@ -24,12 +24,12 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
 
 def weighted_contrastive_loss(out, possim, negsim, weights, loss_weight, temp=0.07):
     cos = nn.CosineSimilarity(dim=2, eps=1e-6)
-
     possim = cos(out, posemb)
 
     out = out.repeat(1, negemb.shape[1], 1)
     negsim = cos(out, negemb)
 
+    # breakpoint()
     logits = torch.cat((possim, negsim), dim=1) / temp
     exp = torch.exp(logits)
     loss = -torch.log(exp[:, 0] / torch.sum(exp, dim=1))
@@ -134,7 +134,7 @@ def eval_auc_loop(model, val_loader):
 
         ellemb = torch.cat((posemb, negemb), dim=1)
 
-        urs_x, embs = model(idx, ellemb)
+        urs_x, embs, _ = model(idx, ellemb)
 
         # breakpoint()
         posemb_out = embs[:, 0, :].unsqueeze(dim=1)
@@ -247,10 +247,18 @@ if __name__ == "__main__":
         val_dataset, batch_size=BATCH_SIZE, shuffle=True
     )
 
-    model = Aligner(
+    # model = Aligner(
+    #     n_users=NUSERS,
+    #     emb_size=EMB_SIZE,
+    #     prj_size=512,
+    #     prj_type="bn",
+    # ).to(DEVICE)
+
+    model = TunedAligner(
         n_users=NUSERS,
         emb_size=EMB_SIZE,
         prj_size=512,
+        temp=TEMP,
         prj_type="bn",
     ).to(DEVICE)
 
@@ -277,7 +285,7 @@ if __name__ == "__main__":
 
             ellemb = torch.cat((posemb, negemb), dim=1)
 
-            urs_x, embs = model(idx, ellemb)
+            urs_x, embs, temp = model(idx, ellemb)
 
             # breakpoint()
             posemb_out = embs[:, 0, :].unsqueeze(dim=1)
@@ -287,7 +295,7 @@ if __name__ == "__main__":
             out = urs_x.unsqueeze(1)
 
             loss = weighted_contrastive_loss(
-                out, posemb, negemb, weights, WEIGHT, temp=TEMP
+                out, posemb, negemb, weights, WEIGHT, temp=temp
             )
             # breakpoint()
             if itr % LOG_EVERY == 0 and LOG:
@@ -301,6 +309,8 @@ if __name__ == "__main__":
 
             loss.backward()
             opt.step()
+
+            print(temp)
 
         roc_auc, pr_auc = eval_auc_loop(model, val_dataloader)
 
