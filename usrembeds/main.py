@@ -22,7 +22,7 @@ from sklearn.metrics import roc_curve, roc_auc_score, average_precision_score
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
 
 
-def weighted_contrastive_loss(out, possim, negsim, weights, temp=0.07):
+def weighted_contrastive_loss(out, possim, negsim, weights, loss_weight, temp=0.07):
     cos = nn.CosineSimilarity(dim=2, eps=1e-6)
 
     possim = cos(out, posemb)
@@ -34,7 +34,7 @@ def weighted_contrastive_loss(out, possim, negsim, weights, temp=0.07):
     exp = torch.exp(logits)
     loss = -torch.log(exp[:, 0] / torch.sum(exp, dim=1))
 
-    loss = loss * ((weights * 0.5) + 1)
+    loss = loss * ((weights * loss_weight) + 1)
 
     loss = torch.mean(loss)
     return loss
@@ -196,6 +196,8 @@ if __name__ == "__main__":
     SUBSET = args["subset"]
     TEMP = args["temp"]
     MUL = args["multiplier"]
+    WEIGHT = args["weight"]
+
     LOG = not args["no_log"]
     LOG_EVERY = 100
 
@@ -218,6 +220,8 @@ if __name__ == "__main__":
                 "batch_size": BATCH_SIZE,
                 "neg_samples": NEG,
                 "temp": TEMP,
+                "multiplier": MUL,
+                "loss weight": WEIGHT,
             },
         )
 
@@ -282,7 +286,9 @@ if __name__ == "__main__":
             # breakpoint()
             out = urs_x.unsqueeze(1)
 
-            loss = weighted_contrastive_loss(out, posemb, negemb, weights, temp=TEMP)
+            loss = weighted_contrastive_loss(
+                out, posemb, negemb, weights, WEIGHT, temp=TEMP
+            )
             # breakpoint()
             if itr % LOG_EVERY == 0 and LOG:
                 wandb.log(

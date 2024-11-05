@@ -94,5 +94,13 @@ def get_args():
         default=False,
     )
 
+    parser.add_argument(
+        "-W",
+        "--weight",
+        type=float,
+        help="Weight for the loss",
+        default=0,
+    )
+
     args = vars(parser.parse_args())
     return args
