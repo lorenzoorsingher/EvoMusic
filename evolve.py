@@ -77,6 +77,8 @@ EMB_SIZE = 768 # Embedding size for CLIP model
 MAX_SEQ_LEN = 10  # Maximum sequence length for CLIP model (should be 77)
 USE_CMAES = True # Set to True to use CMA-ES instead of custom Searcher
 
+VISUALIZATION = True
+
 # -------------------------------------------------------------------------
 
 # ------------------------- Audio Embedding Setup -------------------------
@@ -368,7 +370,7 @@ class PromptOptimizationProblem(Problem):
 
 matplotlib.use("TkAgg")
 class LivePlotter(Logger):
-    def __init__(self, searcher, problem, target_status: str):
+    def __init__(self, searcher, problem, target_status: str, visualization=VISUALIZATION):
         # Call the super constructor
         super().__init__(searcher)
         self._searcher = searcher
@@ -376,30 +378,33 @@ class LivePlotter(Logger):
         self._target_embedding_3D = problem.target_embedding_3D
         self._target_embedding_2D = problem.target_embedding_3D[:2] / np.linalg.norm(problem.target_embedding_3D[:2])
 
-        # Set up the target status
-        self._target_status = target_status
+        self._visualization = visualization
 
-        # Create a figure with three subplots: 2D Evolution, 3D Embeddings, and 2D Embeddings
-        self._fig = plt.figure(figsize=(15, 7), dpi=100)  # Increased width to accommodate an extra subplot
+        if visualization:
+            # Set up the target status
+            self._target_status = target_status
 
-        # 2D Plot for Iteration vs. Fitness
-        self._ax2D = self._fig.add_subplot(1, 3, 1)
-        self._ax2D.set_xlabel("Iteration")
-        self._ax2D.set_ylabel(target_status)
-        self._ax2D.set_title("Evolution Progress")
+            # Create a figure with three subplots: 2D Evolution, 3D Embeddings, and 2D Embeddings
+            self._fig = plt.figure(figsize=(15, 7), dpi=100)  # Increased width to accommodate an extra subplot
 
-        # 3D Plot for Embeddings
-        self._ax3D = self._fig.add_subplot(1, 3, 2, projection='3d')
-        self._ax3D.set_xlabel("PCA 1")
-        self._ax3D.set_ylabel("PCA 2")
-        self._ax3D.set_zlabel("PCA 3")
-        self._ax3D.set_title("3D Embedding Space")
+            # 2D Plot for Iteration vs. Fitness
+            self._ax2D = self._fig.add_subplot(1, 3, 1)
+            self._ax2D.set_xlabel("Iteration")
+            self._ax2D.set_ylabel(target_status)
+            self._ax2D.set_title("Evolution Progress")
 
-        # NEW: 2D Plot for Embeddings (PCA1 vs PCA2)
-        self._ax2D_emb = self._fig.add_subplot(1, 3, 3)
-        self._ax2D_emb.set_xlabel("PCA 1")
-        self._ax2D_emb.set_ylabel("PCA 2")
-        self._ax2D_emb.set_title("2D Embedding Space (PCA1 vs PCA2)")
+            # 3D Plot for Embeddings
+            self._ax3D = self._fig.add_subplot(1, 3, 2, projection='3d')
+            self._ax3D.set_xlabel("PCA 1")
+            self._ax3D.set_ylabel("PCA 2")
+            self._ax3D.set_zlabel("PCA 3")
+            self._ax3D.set_title("3D Embedding Space")
+
+            # NEW: 2D Plot for Embeddings (PCA1 vs PCA2)
+            self._ax2D_emb = self._fig.add_subplot(1, 3, 3)
+            self._ax2D_emb.set_xlabel("PCA 1")
+            self._ax2D_emb.set_ylabel("PCA 2")
+            self._ax2D_emb.set_title("2D Embedding Space (PCA1 vs PCA2)")
 
         # Initialize data containers
         self.iterations = []
@@ -408,41 +413,42 @@ class LivePlotter(Logger):
 
         self.best_embedding_history = []
 
-        # Plot elements for 3D Embedding Space
-        self.current_population_scatter = self._ax3D.scatter([], [], [], c='blue', label='Current Population', alpha=0.6)
-        self.best_scatter = self._ax3D.scatter([], [], [], c='green', marker='*', s=100, label='Best Solution')
-        self.past_bests_scatter = self._ax3D.scatter([], [], [], c='orange', marker='D', s=50, label='Past Bests')
-        self.target_scatter = self._ax3D.scatter(
-            target_embedding_3D[0],
-            target_embedding_3D[1],
-            target_embedding_3D[2],
-            c='red',
-            marker='X',
-            s=150,
-            label='Target'
-        )
+        if visualization:
+            # Plot elements for 3D Embedding Space
+            self.current_population_scatter = self._ax3D.scatter([], [], [], c='blue', label='Current Population', alpha=0.6)
+            self.best_scatter = self._ax3D.scatter([], [], [], c='green', marker='*', s=100, label='Best Solution')
+            self.past_bests_scatter = self._ax3D.scatter([], [], [], c='orange', marker='D', s=50, label='Past Bests')
+            self.target_scatter = self._ax3D.scatter(
+                target_embedding_3D[0],
+                target_embedding_3D[1],
+                target_embedding_3D[2],
+                c='red',
+                marker='X',
+                s=150,
+                label='Target'
+            )
 
-        # NEW: Plot elements for 2D Embedding Space
-        self.current_population_scatter_2D = self._ax2D_emb.scatter([], [], c='blue', label='Current Population', alpha=0.6)
-        self.best_scatter_2D = self._ax2D_emb.scatter([], [], c='green', marker='*', s=100, label='Best Solution')
-        self.past_bests_scatter_2D = self._ax2D_emb.scatter([], [], c='orange', marker='D', s=50, label='Past Bests')
-        self.target_scatter_2D = self._ax2D_emb.scatter(
-            self._target_embedding_2D[0],
-            self._target_embedding_2D[1],
-            c='red',
-            marker='X',
-            s=150,
-            label='Target'
-        )
+            # NEW: Plot elements for 2D Embedding Space
+            self.current_population_scatter_2D = self._ax2D_emb.scatter([], [], c='blue', label='Current Population', alpha=0.6)
+            self.best_scatter_2D = self._ax2D_emb.scatter([], [], c='green', marker='*', s=100, label='Best Solution')
+            self.past_bests_scatter_2D = self._ax2D_emb.scatter([], [], c='orange', marker='D', s=50, label='Past Bests')
+            self.target_scatter_2D = self._ax2D_emb.scatter(
+                self._target_embedding_2D[0],
+                self._target_embedding_2D[1],
+                c='red',
+                marker='X',
+                s=150,
+                label='Target'
+            )
 
-        # Legends for both plots
-        self._ax2D.legend(loc='upper right')
-        self._ax3D.legend(loc='upper left')
-        self._ax2D_emb.legend(loc='upper left')  # Add legend for the new 2D plot
+            # Legends for both plots
+            self._ax2D.legend(loc='upper right')
+            self._ax3D.legend(loc='upper left')
+            self._ax2D_emb.legend(loc='upper left')  # Add legend for the new 2D plot
 
-        # Set interactive mode on
-        plt.ion()
-        plt.show()
+            # Set interactive mode on
+            plt.ion()
+            plt.show()
 
     def _log(self, status: dict):
         # Update iteration and fitness history
@@ -455,154 +461,157 @@ class LivePlotter(Logger):
         best_fitness = max(self.fitness_values)
         self.best_fitness_history.append(best_fitness)
 
-        # Update 2D Evolution Progress Plot
-        self._ax2D.clear()
-        self._ax2D.plot(self.iterations, self.fitness_values, label='Current Fitness', color='blue')
-        self._ax2D.plot(self.iterations, self.best_fitness_history, label='Best Fitness', color='green')
-        self._ax2D.set_xlabel("Iteration")
-        self._ax2D.set_ylabel(self._target_status)
-        self._ax2D.set_title("Evolution Progress")
-        self._ax2D.legend(loc='upper right')
-        self._ax2D.grid(True)
+        if self._visualization:
+            # Update 2D Evolution Progress Plot
+            self._ax2D.clear()
+            self._ax2D.plot(self.iterations, self.fitness_values, label='Current Fitness', color='blue')
+            self._ax2D.plot(self.iterations, self.best_fitness_history, label='Best Fitness', color='green')
+            self._ax2D.set_xlabel("Iteration")
+            self._ax2D.set_ylabel(self._target_status)
+            self._ax2D.set_title("Evolution Progress")
+            self._ax2D.legend(loc='upper right')
+            self._ax2D.grid(True)
 
-        # Update 3D Embedding Space Plot
-        # Clear previous current population scatter
-        if hasattr(self, 'current_population_scatter'):
-            self.current_population_scatter.remove()
+            # Update 3D Embedding Space Plot
+            # Clear previous current population scatter
+            if hasattr(self, 'current_population_scatter'):
+                self.current_population_scatter.remove()
 
-        # Extract current population embeddings
-        current_population_embeddings = np.array([
-            self._problem.embeddings_3D[i] for i in range(len(self._problem.embeddings_3D))
-        ])
-
-        # Scatter current population
-        self.current_population_scatter = self._ax3D.scatter(
-            current_population_embeddings[:, 0],
-            current_population_embeddings[:, 1],
-            current_population_embeddings[:, 2],
-            c='blue',
-            label='Current Population',
-            alpha=0.6
-        )
+            # Extract current population embeddings
+            current_population_embeddings = np.array([
+                self._problem.embeddings_3D[i] for i in range(len(self._problem.embeddings_3D))
+            ])
+            
+            # Scatter current population
+            self.current_population_scatter = self._ax3D.scatter(
+                current_population_embeddings[:, 0],
+                current_population_embeddings[:, 1],
+                current_population_embeddings[:, 2],
+                c='blue',
+                label='Current Population',
+                alpha=0.6
+            )
 
         # Update best solution
         best_idx = self._searcher._population.evals.argmax()
         best_embedding = self._problem.embeddings_3D[best_idx]
 
-        # Clear previous best and past best scatters
-        if hasattr(self, 'best_scatter'):
-            self.best_scatter.remove()
-        if hasattr(self, 'past_bests_scatter') and len(self.best_embedding_history) > 1:
-            self.past_bests_scatter.remove()
+        if self._visualization:
+            # Clear previous best and past best scatters
+            if hasattr(self, 'best_scatter'):
+                self.best_scatter.remove()
+            if hasattr(self, 'past_bests_scatter') and len(self.best_embedding_history) > 1:
+                self.past_bests_scatter.remove()
 
-        # Plot best solution
-        self.best_scatter = self._ax3D.scatter(
-            best_embedding[0],
-            best_embedding[1],
-            best_embedding[2],
-            c='green',
-            marker='*',
-            s=100,
-            label='Best Solution'
-        )
-
-        # Plot past bests
-        if len(self.best_embedding_history) > 0:
-            history = np.array(self.best_embedding_history)
-            self.past_bests_scatter = self._ax3D.scatter(
-                history[:, 0],
-                history[:, 1],
-                history[:, 2],
-                c='orange',
-                marker='D',
-                s=50,
-                label='Past Bests'
+            # Plot best solution
+            self.best_scatter = self._ax3D.scatter(
+                best_embedding[0],
+                best_embedding[1],
+                best_embedding[2],
+                c='green',
+                marker='*',
+                s=100,
+                label='Best Solution'
             )
-        self.best_embedding_history.append(best_embedding)
-        
-        # Re-add target scatter (it doesn't change)
-        self.target_scatter.remove()
-        self.target_scatter = self._ax3D.scatter(
-            self._target_embedding_3D[0],
-            self._target_embedding_3D[1],
-            self._target_embedding_3D[2],
-            c='red',
-            marker='X',
-            s=150,
-            label='Target'
-        )
 
-        # Adjust the view
-        self._ax3D.view_init(elev=30, azim=45)
+            # Plot past bests
+            if len(self.best_embedding_history) > 0:
+                history = np.array(self.best_embedding_history)
+                self.past_bests_scatter = self._ax3D.scatter(
+                    history[:, 0],
+                    history[:, 1],
+                    history[:, 2],
+                    c='orange',
+                    marker='D',
+                    s=50,
+                    label='Past Bests'
+                )
+            self.best_embedding_history.append(best_embedding)
+            
+            # Re-add target scatter (it doesn't change)
+            self.target_scatter.remove()
+            self.target_scatter = self._ax3D.scatter(
+                self._target_embedding_3D[0],
+                self._target_embedding_3D[1],
+                self._target_embedding_3D[2],
+                c='red',
+                marker='X',
+                s=150,
+                label='Target'
+            )
 
-        # Add legend only once
-        handles, labels = self._ax3D.get_legend_handles_labels()
-        by_label = dict(zip(labels, handles))
-        self._ax3D.legend(by_label.values(), by_label.keys())
+            # Adjust the view
+            self._ax3D.view_init(elev=30, azim=45)
 
-        # Center in 0,0,0
-        self._ax3D.set_xlim(-1, 1)
-        self._ax3D.set_ylim(-1, 1)
-        self._ax3D.set_zlim(-1, 1)
+            # Add legend only once
+            handles, labels = self._ax3D.get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+            self._ax3D.legend(by_label.values(), by_label.keys())
 
-        # Update 2D Embedding Space Plot
-        current_population_embeddings = current_population_embeddings[:, :2]
-        current_population_embeddings = current_population_embeddings / np.linalg.norm(current_population_embeddings, axis=1)[:, None]
-        self._ax2D_emb.clear()
-        # Current Population
-        self._ax2D_emb.scatter(
-            current_population_embeddings[:, 0],
-            current_population_embeddings[:, 1],
-            c='blue',
-            label='Current Population',
-            alpha=0.6
-        )    
-        past_bests = np.array([emb[:2] for emb in self.best_embedding_history])
-        past_bests = past_bests / np.linalg.norm(past_bests, axis=1)[:, None]
-        # Best Solution
-        self._ax2D_emb.scatter(
-            past_bests[-1, 0],
-            past_bests[-1, 1],
-            c='green',
-            marker='*',
-            s=100,
-            label='Best Solution'
-        )
-        # Past Bests
-        if len(self.best_embedding_history) > 1:
+            # Center in 0,0,0
+            self._ax3D.set_xlim(-1, 1)
+            self._ax3D.set_ylim(-1, 1)
+            self._ax3D.set_zlim(-1, 1)
+
+            # Update 2D Embedding Space Plot
+            current_population_embeddings = current_population_embeddings[:, :2]
+            current_population_embeddings = current_population_embeddings / np.linalg.norm(current_population_embeddings, axis=1)[:, None]
+            self._ax2D_emb.clear()
+            # Current Population
             self._ax2D_emb.scatter(
-                past_bests[:-1, 0],
-                past_bests[:-1, 1],
-                c='orange',
-                marker='D',
-                s=50,
-                label='Past Bests'
+                current_population_embeddings[:, 0],
+                current_population_embeddings[:, 1],
+                c='blue',
+                label='Current Population',
+                alpha=0.6
+            )    
+            past_bests = np.array([emb[:2] for emb in self.best_embedding_history])
+            past_bests = past_bests / np.linalg.norm(past_bests, axis=1)[:, None]
+            # Best Solution
+            self._ax2D_emb.scatter(
+                past_bests[-1, 0],
+                past_bests[-1, 1],
+                c='green',
+                marker='*',
+                s=100,
+                label='Best Solution'
             )
-        # Target Embedding
-        self._ax2D_emb.scatter(
-            self._target_embedding_2D[0],
-            self._target_embedding_2D[1],
-            c='red',
-            marker='X',
-            s=150,
-            label='Target'
-        )
-        self._ax2D_emb.set_xlabel("PCA 1")
-        self._ax2D_emb.set_ylabel("PCA 2")
-        self._ax2D_emb.set_title("2D Embedding Space (PCA1 vs PCA2)")
-        self._ax2D_emb.legend(loc='upper left')
-        self._ax2D_emb.grid(True)
+            # Past Bests
+            if len(self.best_embedding_history) > 1:
+                self._ax2D_emb.scatter(
+                    past_bests[:-1, 0],
+                    past_bests[:-1, 1],
+                    c='orange',
+                    marker='D',
+                    s=50,
+                    label='Past Bests'
+                )
+            # Target Embedding
+            self._ax2D_emb.scatter(
+                self._target_embedding_2D[0],
+                self._target_embedding_2D[1],
+                c='red',
+                marker='X',
+                s=150,
+                label='Target'
+            )
+            self._ax2D_emb.set_xlabel("PCA 1")
+            self._ax2D_emb.set_ylabel("PCA 2")
+            self._ax2D_emb.set_title("2D Embedding Space (PCA1 vs PCA2)")
+            self._ax2D_emb.legend(loc='upper left')
+            self._ax2D_emb.grid(True)
 
-        self._ax2D_emb.set_xlim(-1, 1)
-        self._ax2D_emb.set_ylim(-1, 1)
+            self._ax2D_emb.set_xlim(-1, 1)
+            self._ax2D_emb.set_ylim(-1, 1)
 
-        # Draw and pause briefly to update the plot
-        self._fig.canvas.draw()
-        self._fig.canvas.flush_events()
-        plt.pause(0.1)
+            # Draw and pause briefly to update the plot
+            self._fig.canvas.draw()
+            self._fig.canvas.flush_events()
+            plt.pause(0.1)
 
         self._problem.embeddings_3D = []
 
+        print(f"Iteration: {current_iter} | {self._target_status}: {current_fitness}")
         if self._problem.prompt_optim:
             best = self._searcher._get_best()
             generate_music(prompt=best, name="best_music")
