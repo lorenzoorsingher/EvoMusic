@@ -190,6 +190,7 @@ if __name__ == "__main__":
     HOP_SIZE = 0.2
     AUDIO_LEN = 5
     EPOCHS = 1000
+    PAT = 6
 
     if LOG:
         load_dotenv()
@@ -249,6 +250,7 @@ if __name__ == "__main__":
     opt = optim.AdamW(model.parameters(), lr=0.001)
 
     best_auc = 0
+    pat = PAT
 
     for epoch in range(EPOCHS):
 
@@ -297,10 +299,6 @@ if __name__ == "__main__":
 
         roc_auc, pr_auc = eval_auc_loop(model, val_dataloader)
 
-        if roc_auc > best_auc:
-            best_auc = roc_auc
-            torch.save(model.state_dict(), f"{save_path}/{run_name}_best.pt")
-
         if LOG:
             wandb.log(
                 {
@@ -310,6 +308,13 @@ if __name__ == "__main__":
                 }
             )
 
+        if roc_auc > best_auc:
+            best_auc = roc_auc
+            torch.save(model.state_dict(), f"{save_path}/{run_name}_best.pt")
+        else:
+            pat -= 1
+            if pat == 0:
+                break
         print(
             f"loss {round(np.mean(losses),3)} roc_auc {round(roc_auc,3)} pr_auc {round(pr_auc,3)}"
         )
