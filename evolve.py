@@ -15,7 +15,6 @@ from transformers import AutoModel, Wav2Vec2FeatureExtractor
 import requests
 import json
 import math
-import gradio as gr
 from evotorch.logging import Logger
 import matplotlib
 import matplotlib.pyplot as plt
@@ -794,7 +793,10 @@ if __name__ == "__main__":
     def listen_to_music(audio_path):
         return audio_path
 
-    with gr.Blocks() as demo:
-        gr.Markdown("## Best Generated Music 🎶")
-        output_audio = gr.Audio(label="Generated Music", value=final_audio_path)
-        demo.launch()
+    if VISUALIZATION:        
+        import gradio as gr
+        
+        with gr.Blocks() as demo:
+            gr.Markdown("## Best Generated Music 🎶")
+            output_audio = gr.Audio(label="Generated Music", value=final_audio_path)
+            demo.launch()
