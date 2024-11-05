@@ -195,12 +195,14 @@ if __name__ == "__main__":
         load_dotenv()
         WANDB_SECRET = os.getenv("WANDB_SECRET")
         wandb.login(key=WANDB_SECRET)
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_name = f"run_{timestamp}"
     if LOG:
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         wandb.init(
             # set the wandb project where this run will be logged
             project="BIO",
-            name="run_" + timestamp,
+            name=run_name,
             config={
                 "emb_size": EMB_SIZE,
                 "batch_size": BATCH_SIZE,
@@ -214,6 +216,7 @@ if __name__ == "__main__":
 
     membs_path = "usrembeds/data/embeddings/batched"
     stats_path = "clean_stats.csv"
+    save_path = "usrembeds/checkpoints"
 
     dataset = ContrDataset(
         membs_path,
@@ -243,6 +246,8 @@ if __name__ == "__main__":
     ).to(DEVICE)
 
     opt = optim.AdamW(model.parameters(), lr=0.001)
+
+    best_auc = 0
 
     for epoch in range(EPOCHS):
 
@@ -279,11 +284,10 @@ if __name__ == "__main__":
             )
             # breakpoint()
             if itr % LOG_EVERY == 0 and LOG:
-                wandb.log(
-                    {
-                        "loss": loss.item(),
-                    }
-                )
+                if LT:
+                    wandb.log({"loss": loss.item(), "temp": temp.item()})
+                else:
+                    wandb.log({"loss": loss.item()})
 
             losses.append(loss.item())
 
@@ -291,6 +295,10 @@ if __name__ == "__main__":
             opt.step()
 
         roc_auc, pr_auc = eval_auc_loop(model, val_dataloader)
+
+        if roc_auc > best_auc:
+            best_auc = roc_auc
+            torch.save(model.state_dict(), f"{save_path}/{run_name}_best.pt")
 
         if LOG:
             wandb.log(

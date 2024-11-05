@@ -167,6 +167,9 @@ cython_debug/
 *.json
 *.zip
 *.csv
+*.pt
+*.pth
+
 
 # wandb
 wandb/
