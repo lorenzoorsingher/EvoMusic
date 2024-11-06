@@ -246,7 +246,7 @@ if __name__ == "__main__":
         train_dataset, batch_size=BATCH_SIZE, shuffle=True
     )
     val_dataloader = torch.utils.data.DataLoader(
-        val_dataset, batch_size=BATCH_SIZE, shuffle=True
+        val_dataset, batch_size=16, shuffle=True
     )
 
     model = Aligner(
@@ -269,6 +269,10 @@ if __name__ == "__main__":
     }
 
     opt = optim.AdamW(model.parameters(), lr=0.001)
+
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+    #                     optimizer, "min", factor=0.2, patience=PAT // 2
+    #                 )
 
     best_auc = 0
     pat = PAT
