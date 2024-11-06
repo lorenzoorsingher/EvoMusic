@@ -19,8 +19,11 @@ class Aligner(nn.Module):
         self.fc2 = nn.Linear(4096, prj_size)
 
         self.ln = nn.LayerNorm(prj_size)
+
         self.bn = nn.BatchNorm1d(prj_size)
-        self.fc3 = nn.Linear(prj_size, prj_size)
+
+        self.fc3 = nn.Linear(prj_size, 4096)
+        self.fc4 = nn.Linear(4096, prj_size)
 
         self.temp = temp
         if lt:
@@ -39,7 +42,8 @@ class Aligner(nn.Module):
         urs_x = self.fc2(urs_x)
 
         if self.prj_type == "linear":
-            embs = self.fc3(embs)
+            embs = F.relu(self.fc3(embs))
+            embs = self.fc4(embs)
         elif self.prj_type == "ln":
             embs = self.ln(embs)
         elif self.prj_type == "bn":

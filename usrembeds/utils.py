@@ -110,5 +110,13 @@ def get_args():
         default=0,
     )
 
+    parser.add_argument(
+        "-P",
+        "--prj",
+        type=str,
+        help="Define the projection type [bn, ln, linear]",
+        default="bn",
+    )
+
     args = vars(parser.parse_args())
     return args

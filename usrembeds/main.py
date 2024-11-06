@@ -171,6 +171,15 @@ def eval_auc_loop(model, val_loader):
     return roc_auc, pr_auc
 
 
+def load_model(model_path, device="cuda"):
+    model_savefile = torch.load(model_path, map_location=device)
+    state_dict = model_savefile["model"]
+    config = model_savefile["config"]
+    opt_state = model_savefile["optimizer"]
+
+    return state_dict, config, opt_state
+
+
 if __name__ == "__main__":
 
     args = get_args()
@@ -183,6 +192,7 @@ if __name__ == "__main__":
     LT = args["learnable_temp"]
     MUL = args["multiplier"]
     WEIGHT = args["weight"]
+    PRJ = args["prj"]
 
     LOG = not args["no_log"]
     LOG_EVERY = 100
@@ -212,6 +222,7 @@ if __name__ == "__main__":
                 "learnable_temp": LT,
                 "multiplier": MUL,
                 "loss weight": WEIGHT,
+                "prj": PRJ,
             },
         )
 
@@ -242,10 +253,20 @@ if __name__ == "__main__":
         n_users=NUSERS,
         emb_size=EMB_SIZE,
         prj_size=512,
-        prj_type="bn",
+        prj_type=PRJ,
         lt=LT,
         temp=TEMP,
     ).to(DEVICE)
+
+    config = {
+        "emb_size": EMB_SIZE,
+        "batch_size": BATCH_SIZE,
+        "neg_samples": NEG,
+        "temp": TEMP,
+        "learnable_temp": LT,
+        "multiplier": MUL,
+        "loss weight": WEIGHT,
+    }
 
     opt = optim.AdamW(model.parameters(), lr=0.001)
 
@@ -296,7 +317,7 @@ if __name__ == "__main__":
 
             loss.backward()
             opt.step()
-
+            # print(temp.item())
         roc_auc, pr_auc = eval_auc_loop(model, val_dataloader)
 
         if LOG:
@@ -310,7 +331,13 @@ if __name__ == "__main__":
 
         if roc_auc > best_auc:
             best_auc = roc_auc
-            torch.save(model.state_dict(), f"{save_path}/{run_name}_best.pt")
+            model_savefile = {
+                "model": model.state_dict(),
+                "optimizer": opt.state_dict(),
+                "config": config,
+            }
+            torch.save(model, f"{save_path}/{run_name}_best.pt")
+            pat = PAT
         else:
             pat -= 1
             if pat == 0:
