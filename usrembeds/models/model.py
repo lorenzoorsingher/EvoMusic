@@ -38,11 +38,11 @@ class Aligner(nn.Module):
 
         user_embs = self.users(idx)
 
-        urs_x = F.relu(self.fc1(user_embs))
+        urs_x = F.gelu(self.fc1(user_embs))
         urs_x = self.fc2(urs_x)
 
         if self.prj_type == "linear":
-            embs = F.relu(self.fc3(embs))
+            embs = F.gelu(self.fc3(embs))
             embs = self.fc4(embs)
         elif self.prj_type == "ln":
             embs = self.ln(embs)
