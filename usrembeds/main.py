@@ -128,6 +128,7 @@ if __name__ == "__main__":
 
     BATCH_SIZE = args["batch"]
     EMB_SIZE = args["embeds"]
+    MUSIC_EMB_SIZE = 512
     NEG = args["neg"]
     TEMP = args["temp"]
     LT = args["learnable_temp"]
@@ -138,8 +139,6 @@ if __name__ == "__main__":
     LOG = not args["no_log"]
     LOG_EVERY = 100
 
-    HOP_SIZE = 0.2
-    AUDIO_LEN = 5
     EPOCHS = 1000
     PAT = 6
 
@@ -192,7 +191,7 @@ if __name__ == "__main__":
     model = Aligner(
         n_users=NUSERS,
         emb_size=EMB_SIZE,
-        prj_size=512,
+        prj_size=MUSIC_EMB_SIZE,
         prj_type=PRJ,
         lt=LT,
         temp=TEMP,
@@ -207,6 +206,8 @@ if __name__ == "__main__":
         "multiplier": MUL,
         "loss weight": WEIGHT,
         "prj": PRJ,
+        "nusers": NUSERS,
+        "prj_size": MUSIC_EMB_SIZE,
     }
 
     opt = optim.AdamW(model.parameters(), lr=0.001)
