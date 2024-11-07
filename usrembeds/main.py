@@ -40,64 +40,6 @@ def weighted_contrastive_loss(out, possim, negsim, weights, loss_weight, temp=0.
     return loss
 
 
-def eval_loop(model, val_loader):
-
-    model.eval()
-
-    losses = []
-
-    correct = 0
-    total = 0
-    for tracks in tqdm(val_loader):
-
-        # [B]
-        # [B, 1, EMB]
-        # [B, NNEG, EMB]
-        idx, posemb, negemb = tracks
-
-        idx = idx.to(DEVICE)
-        posemb = posemb.to(DEVICE)
-        negemb = negemb.to(DEVICE)
-
-        ellemb = torch.cat((posemb, negemb), dim=1)
-
-        urs_x, embs = model(idx, ellemb)
-
-        # breakpoint()
-        posemb_out = embs[:, 0, :].unsqueeze(dim=1)
-        negemb_out = embs[:, 1:, :]
-
-        # breakpoint()
-        out = urs_x.unsqueeze(1)
-        # breakpoint()
-
-        # breakpoint()
-        cos = nn.CosineSimilarity(dim=2, eps=1e-6)
-
-        possim = cos(out, posemb_out).squeeze(1)
-
-        out = out.repeat(1, negemb_out.shape[1], 1)
-        negsim = cos(out, negemb_out)
-
-        negsim = negsim.view(-1, negemb_out.shape[1])
-
-        mean_negsim = torch.mean(negsim, dim=1)
-
-        correct += (possim > mean_negsim).sum().item()
-        total += possim.shape[0]
-        # breakpoint()
-        # logits = torch.cat((possim, negsim), dim=1) / 0.07
-        # exp = torch.exp(logits)
-        # loss = -torch.log(exp[:, 0] / torch.sum(exp, dim=1))
-        # loss = torch.mean(loss)
-
-        # losses.append(loss.item())
-
-        # print(np.mean(losses))
-    model.train()
-    return correct / total
-
-
 def eval_auc_loop(model, val_loader):
 
     model.eval()
@@ -187,7 +129,6 @@ if __name__ == "__main__":
     BATCH_SIZE = args["batch"]
     EMB_SIZE = args["embeds"]
     NEG = args["neg"]
-    SUBSET = args["subset"]
     TEMP = args["temp"]
     LT = args["learnable_temp"]
     MUL = args["multiplier"]
@@ -235,7 +176,6 @@ if __name__ == "__main__":
         stats_path,
         nneg=NEG,
         multiplier=MUL,
-        subset=SUBSET,
         transform=None,
     )
 
@@ -266,6 +206,7 @@ if __name__ == "__main__":
         "learnable_temp": LT,
         "multiplier": MUL,
         "loss weight": WEIGHT,
+        "prj": PRJ,
     }
 
     opt = optim.AdamW(model.parameters(), lr=0.001)
