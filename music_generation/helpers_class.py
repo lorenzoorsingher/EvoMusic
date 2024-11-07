@@ -35,9 +35,16 @@ class RiffusionHelpers(EasyDiffuse):
             embedded_text = self.text_encoder(inputs.input_ids.to(self.device))
         return embedded_text
 
-    def token_to_embed(self, tokens):
+    def token_to_embed(self, input_ids):
         with torch.no_grad():
-            return self.text_encoder(tokens.input_ids.to(self.device))
+            return self.text_encoder(input_ids.to(self.device))
+
+    def text_to_embeddings_before_clip(self, text, max_length=None):
+        if max_length is None:
+            max_length = self.tokenizer.model_max_length
+        inputs = self.tokenizer(text, padding="max_length", max_length=max_length, truncation=True, return_tensors="pt")
+        with torch.no_grad():
+            return self.text_encoder.get_input_embeddings()(inputs.input_ids.to(self.device))
 
 
 class MusicGenHelpers(EasyDiffuse):
