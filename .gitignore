@@ -164,6 +164,7 @@ cython_debug/
 # Data
 
 *.wav
+*.mp3
 *.json
 *.zip
 *.csv
