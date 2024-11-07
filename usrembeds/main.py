@@ -22,7 +22,7 @@ from sklearn.metrics import roc_curve, roc_auc_score, average_precision_score
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
 
 
-def weighted_contrastive_loss(out, possim, negsim, weights, loss_weight, temp=0.07):
+def weighted_contrastive_loss(out, posemb, negemb, weights, loss_weight, temp=0.07):
     cos = nn.CosineSimilarity(dim=2, eps=1e-6)
     possim = cos(out, posemb)
 
@@ -59,9 +59,9 @@ def eval_auc_loop(model, val_loader):
         negemb = negemb.to(DEVICE)
         weights = weights.to(DEVICE)
 
-        ellemb = torch.cat((posemb, negemb), dim=1)
+        allemb = torch.cat((posemb, negemb), dim=1)
 
-        urs_x, embs, _ = model(idx, ellemb)
+        urs_x, embs, _ = model(idx, allemb)
 
         # breakpoint()
         posemb_out = embs[:, 0, :].unsqueeze(dim=1)
@@ -95,22 +95,54 @@ def eval_auc_loop(model, val_loader):
 
     # Calculate PR AUC
     pr_auc = average_precision_score(labels, scores)
-    # print(f"Precision-Recall AUC: {pr_auc}")
-
-    # import matplotlib.pyplot as plt
-
-    # plt.plot(fpr, tpr, label="ROC Curve")
-    # plt.xlabel("False Positive Rate")
-    # plt.ylabel("True Positive Rate")
-    # plt.title("ROC Curve for Embedding Similarity")
-    # plt.legend(loc="best")
-    # plt.show()
-    # breakpoint()
-    # # scores = [possim] + negsim
-    # # labels = [1] + [0] * len(negsim)
 
     model.train()
     return roc_auc, pr_auc
+
+
+def train_loop(model, train_loader, opt, weight, log=False, log_every=100):
+    losses = []
+    for itr, tracks in tqdm(enumerate(train_loader)):
+
+        # [B]
+        # [B, 1, EMB]
+        # [B, NNEG, EMB]
+        idx, posemb, negemb, weights = tracks
+
+        idx = idx.to(DEVICE)
+        posemb = posemb.to(DEVICE)
+        negemb = negemb.to(DEVICE)
+        weights = weights.to(DEVICE)
+
+        opt.zero_grad()
+
+        allemb = torch.cat((posemb, negemb), dim=1)
+
+        urs_x, embs, temp = model(idx, allemb)
+
+        # breakpoint()
+        posemb_out = embs[:, 0, :].unsqueeze(dim=1)
+        negemb_out = embs[:, 1:, :]
+
+        # breakpoint()
+        out = urs_x.unsqueeze(1)
+
+        loss = weighted_contrastive_loss(
+            out, posemb, negemb, weights, weight, temp=temp
+        )
+        # breakpoint()
+        if itr % log_every == 0 and log:
+            if LT:
+                wandb.log({"loss": loss.item(), "temp": temp.item()})
+            else:
+                wandb.log({"loss": loss.item()})
+
+        losses.append(loss.item())
+
+        loss.backward()
+        opt.step()
+        # print(temp.item())
+    return losses
 
 
 def load_model(model_path, device="cuda"):
@@ -222,48 +254,8 @@ if __name__ == "__main__":
     for epoch in range(EPOCHS):
 
         print(f"Epoch {epoch}")
-        losses = []
 
-        for itr, tracks in tqdm(enumerate(train_dataloader)):
-
-            # [B]
-            # [B, 1, EMB]
-            # [B, NNEG, EMB]
-            idx, posemb, negemb, weights = tracks
-
-            idx = idx.to(DEVICE)
-            posemb = posemb.to(DEVICE)
-            negemb = negemb.to(DEVICE)
-            weights = weights.to(DEVICE)
-
-            opt.zero_grad()
-
-            ellemb = torch.cat((posemb, negemb), dim=1)
-
-            urs_x, embs, temp = model(idx, ellemb)
-
-            # breakpoint()
-            posemb_out = embs[:, 0, :].unsqueeze(dim=1)
-            negemb_out = embs[:, 1:, :]
-
-            # breakpoint()
-            out = urs_x.unsqueeze(1)
-
-            loss = weighted_contrastive_loss(
-                out, posemb, negemb, weights, WEIGHT, temp=temp
-            )
-            # breakpoint()
-            if itr % LOG_EVERY == 0 and LOG:
-                if LT:
-                    wandb.log({"loss": loss.item(), "temp": temp.item()})
-                else:
-                    wandb.log({"loss": loss.item()})
-
-            losses.append(loss.item())
-
-            loss.backward()
-            opt.step()
-            # print(temp.item())
+        losses = train_loop(model, train_dataloader, opt, WEIGHT, LOG, LOG_EVERY)
         roc_auc, pr_auc = eval_auc_loop(model, val_dataloader)
 
         if LOG:
