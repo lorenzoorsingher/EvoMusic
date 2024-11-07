@@ -11,6 +11,12 @@ class Aligner(nn.Module):
 
         super(Aligner, self).__init__()
 
+        self.mode = 2
+        if self.mode == 2:
+            emb_size = prj_size
+            self.bn2 = nn.BatchNorm1d(prj_size)
+            self.ln2 = nn.LayerNorm(prj_size)
+
         self.prj_type = prj_type
 
         self.users = nn.Embedding(n_users, emb_size)
@@ -39,8 +45,11 @@ class Aligner(nn.Module):
 
         user_embs = self.users(idx)
 
-        urs_x = F.gelu(self.fc1(user_embs))
-        urs_x = self.fc2(urs_x)
+        if self.mode == 1:
+            urs_x = F.gelu(self.fc1(user_embs))
+            urs_x = self.fc2(urs_x)
+        else:
+            urs_x = self.ln2(user_embs)
 
         if self.prj_type == "linear":
             embs = self.ln2(embs)
