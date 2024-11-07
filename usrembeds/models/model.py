@@ -6,10 +6,25 @@ import torch.nn.functional as F
 
 class Aligner(nn.Module):
     def __init__(
-        self, n_users, emb_size, prj_size, prj_type="linear", lt=False, temp=0.07
+        self,
+        n_users,
+        emb_size,
+        prj_size=512,
+        prj_type="linear",
+        lt=False,
+        temp=0.07,
+        config=None,
     ):
 
         super(Aligner, self).__init__()
+
+        if config is not None:
+
+            emb_size = config["emb_size"]
+            prj_type = config["prj"]
+            temp = config["temp"]
+            lt = config["learnable_temp"]
+            temp = config["temp"]
 
         self.prj_type = prj_type
 
@@ -17,6 +32,7 @@ class Aligner(nn.Module):
 
         self.fc1 = nn.Linear(emb_size, 4096)
         self.fcmid = nn.Linear(4096, 4096)
+        self.dropmid = nn.Dropout(0.25)
         self.fc2 = nn.Linear(4096, prj_size)
 
         self.temp = temp
@@ -35,63 +51,24 @@ class Aligner(nn.Module):
 
         print(f"[MODEL] Using projection type: {prj_type}")
 
-    def forward(self, idx, embs):
+    def forward(self, idx, music_embs):
 
         user_embs = self.users(idx)
 
-        urs_x = F.gelu(self.fc1(user_embs))
-        urs_x = F.gelu(self.fcmid(urs_x))
-        urs_x = self.fc2(urs_x)
+        usr_x = F.gelu(self.fc1(user_embs))
+        # usr_x = F.gelu(self.fcmid(usr_x))
+        usr_x = self.dropmid(usr_x)
+        usr_x = self.fc2(usr_x)
 
         if self.prj_type == "linear":
-            embs = self.ln2(embs)
-            embs = F.gelu(self.fc3(embs))
-            embs = self.fc4(embs)
+            music_x = self.ln2(music_embs)
+            music_x = F.gelu(self.fc3(music_x))
+            music_x = self.fc4(music_x)
         elif self.prj_type == "ln":
-            embs = self.ln(embs)
+            music_x = self.ln(music_x)
         elif self.prj_type == "bn":
-            embs = embs.permute(0, 2, 1)
-            embs = self.bn(embs)
-            embs = embs.permute(0, 2, 1)
+            music_x = music_x.permute(0, 2, 1)
+            music_x = self.bn(music_x)
+            music_x = music_x.permute(0, 2, 1)
 
-        return urs_x, embs, self.temp
-
-
-# class TunedAligner(nn.Module):
-#     def __init__(self, n_users, emb_size, prj_size, prj_type="bn", temp=0.07):
-
-#         super(TunedAligner, self).__init__()
-
-#         self.prj_type = prj_type
-
-#         self.users = nn.Embedding(n_users, emb_size)
-
-#         self.fc1 = nn.Linear(emb_size, 4096)
-#         self.fc2 = nn.Linear(4096, prj_size)
-
-#         self.ln = nn.LayerNorm(prj_size)
-#         self.bn = nn.BatchNorm1d(prj_size)
-#         self.fc3 = nn.Linear(prj_size, prj_size)
-
-#         self.temp = nn.Parameter(torch.tensor(temp))
-
-#     def forward(self, idx, embs):
-
-#         # idx, embs = x
-
-#         user_embs = self.users(idx)
-
-#         urs_x = F.relu(self.fc1(user_embs))
-#         urs_x = self.fc2(urs_x)
-
-#         if self.prj_type == "linear":
-#             embs = self.fc3(embs)
-#         elif self.prj_type == "ln":
-#             embs = self.ln(embs)
-#         elif self.prj_type == "bn":
-#             # TODO: not sure this is the right way
-#             embs = embs.permute(0, 2, 1)
-#             embs = self.bn(embs)
-#             embs = embs.permute(0, 2, 1)
-
-#         return urs_x, embs, self.temp
+        return usr_x, music_embs, self.temp
