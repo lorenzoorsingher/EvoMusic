@@ -4,7 +4,7 @@ import numpy as np
 
 from datautils.dataset import MusicDataset, ContrDataset
 from models.model import Aligner
-from utils import get_args
+from utils import get_args, load_model
 import torch.nn as nn
 
 from torch import optim
@@ -145,28 +145,50 @@ def train_loop(model, train_loader, opt, weight, log=False, log_every=100):
     return losses
 
 
-def load_model(model_path, device="cuda"):
-    model_savefile = torch.load(model_path, map_location=device)
-    state_dict = model_savefile["model"]
-    config = model_savefile["config"]
-    opt_state = model_savefile["optimizer"]
-
-    return state_dict, config, opt_state
-
-
 if __name__ == "__main__":
 
     args = get_args()
 
-    BATCH_SIZE = args["batch"]
-    EMB_SIZE = args["embeds"]
-    MUSIC_EMB_SIZE = 512
-    NEG = args["neg"]
-    TEMP = args["temp"]
-    LT = args["learnable_temp"]
-    MUL = args["multiplier"]
-    WEIGHT = args["weight"]
-    PRJ = args["prj"]
+    LOAD = args["load"]
+
+    default = {
+        "emb_size": 200,
+        "batch_size": 16,
+        "neg_samples": 20,
+        "temp": 0.07,
+        "learnable_temp": False,
+        "multiplier": 10,
+        "weight": 0,
+        "prj": "bn",
+        "nusers": 1000,
+        "prj_size": 512,
+    }
+
+    if LOAD == "":
+        print("[LOADER] Loading parameters from command line")
+        experiments = [args]
+
+    elif LOAD == "exp":
+        print("[LOADER] Loading parameters from experiments set")
+        experiments = [
+            {
+                "temp": 0.15,
+                "lt": False,
+            },
+            {
+                "temp": 0.15,
+                "lt": True,
+                "weight": 0.5,
+            },
+            {
+                "temp": 1,
+                "lt": True,
+            },
+        ]
+    else:
+        print("[LOADER] Loading parameters from checkpoint")
+        model_state, config, opt_state = load_model(LOAD)
+        experiments = [config]
 
     LOG = not args["no_log"]
     LOG_EVERY = 100
@@ -179,111 +201,140 @@ if __name__ == "__main__":
         WANDB_SECRET = os.getenv("WANDB_SECRET")
         wandb.login(key=WANDB_SECRET)
 
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_name = f"run_{timestamp}"
-    if LOG:
-        wandb.init(
-            # set the wandb project where this run will be logged
-            project="BIO",
-            name=run_name,
-            config={
-                "emb_size": EMB_SIZE,
-                "batch_size": BATCH_SIZE,
-                "neg_samples": NEG,
-                "temp": TEMP,
-                "learnable_temp": LT,
-                "multiplier": MUL,
-                "loss weight": WEIGHT,
-                "prj": PRJ,
-            },
-        )
+    ##############################################################################
 
-    membs_path = "usrembeds/data/embeddings/batched"
-    stats_path = "clean_stats.csv"
-    save_path = "usrembeds/checkpoints"
+    for exp_num, exp in enumerate(experiments):
 
-    dataset = ContrDataset(
-        membs_path,
-        stats_path,
-        nneg=NEG,
-        multiplier=MUL,
-        transform=None,
-    )
+        print(f"[MAIN] Running experiment {exp_num+1} or {len(experiments)}")
 
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [0.8, 0.2])
+        config = default.copy()
+        config = config | exp
 
-    NUSERS = dataset.nusers
-    train_dataloader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=BATCH_SIZE, shuffle=True
-    )
-    val_dataloader = torch.utils.data.DataLoader(
-        val_dataset, batch_size=16, shuffle=True
-    )
+        BATCH_SIZE = config["batch_size"]
+        EMB_SIZE = config["emb_size"]
+        MUSIC_EMB_SIZE = config["prj_size"]
+        NEG = config["neg_samples"]
+        TEMP = config["temp"]
+        LT = config["learnable_temp"]
+        MUL = config["multiplier"]
+        WEIGHT = config["weight"]
+        PRJ = config["prj"]
 
-    model = Aligner(
-        n_users=NUSERS,
-        emb_size=EMB_SIZE,
-        prj_size=MUSIC_EMB_SIZE,
-        prj_type=PRJ,
-        lt=LT,
-        temp=TEMP,
-    ).to(DEVICE)
-
-    config = {
-        "emb_size": EMB_SIZE,
-        "batch_size": BATCH_SIZE,
-        "neg_samples": NEG,
-        "temp": TEMP,
-        "learnable_temp": LT,
-        "multiplier": MUL,
-        "loss weight": WEIGHT,
-        "prj": PRJ,
-        "nusers": NUSERS,
-        "prj_size": MUSIC_EMB_SIZE,
-    }
-
-    opt = optim.AdamW(model.parameters(), lr=0.001)
-
-    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-    #                     optimizer, "min", factor=0.2, patience=PAT // 2
-    #                 )
-
-    best_auc = 0
-    pat = PAT
-
-    for epoch in range(EPOCHS):
-
-        print(f"Epoch {epoch}")
-
-        losses = train_loop(model, train_dataloader, opt, WEIGHT, LOG, LOG_EVERY)
-        roc_auc, pr_auc = eval_auc_loop(model, val_dataloader)
-
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_name = f"run_{timestamp}"
         if LOG:
-            wandb.log(
-                {
-                    "mean_loss": np.mean(losses),
-                    "roc_auc": roc_auc,
-                    "pr_auc": pr_auc,
-                }
+            wandb.init(
+                # set the wandb project where this run will be logged
+                project="BIO",
+                name=run_name,
+                config={
+                    "emb_size": EMB_SIZE,
+                    "batch_size": BATCH_SIZE,
+                    "neg_samples": NEG,
+                    "temp": TEMP,
+                    "learnable_temp": LT,
+                    "multiplier": MUL,
+                    "weight": WEIGHT,
+                    "prj": PRJ,
+                },
             )
 
-        if roc_auc > best_auc:
-            best_auc = roc_auc
-            model_savefile = {
-                "model": model.state_dict(),
-                "optimizer": opt.state_dict(),
-                "config": config,
-            }
-            torch.save(model, f"{save_path}/{run_name}_best.pt")
-            pat = PAT
-        else:
-            pat -= 1
-            if pat == 0:
-                break
-        print(
-            f"loss {round(np.mean(losses),3)} roc_auc {round(roc_auc,3)} pr_auc {round(pr_auc,3)}"
-        )
-        # print(loss)
+        membs_path = "usrembeds/data/embeddings/batched"
+        stats_path = "clean_stats.csv"
+        save_path = "usrembeds/checkpoints"
 
-if LOG:
-    wandb.finish()
+        dataset = ContrDataset(
+            membs_path,
+            stats_path,
+            nneg=NEG,
+            multiplier=MUL,
+            transform=None,
+        )
+
+        train_dataset, val_dataset = torch.utils.data.random_split(dataset, [0.8, 0.2])
+
+        NUSERS = dataset.nusers
+        train_dataloader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=BATCH_SIZE, shuffle=True
+        )
+        val_dataloader = torch.utils.data.DataLoader(
+            val_dataset, batch_size=16, shuffle=True
+        )
+
+        model = Aligner(
+            n_users=NUSERS,
+            emb_size=EMB_SIZE,
+            prj_size=MUSIC_EMB_SIZE,
+            prj_type=PRJ,
+            lt=LT,
+            temp=TEMP,
+        ).to(DEVICE)
+
+        if LOAD != "":
+            model.load_state_dict(model_state)
+            opt = optim.AdamW(model.parameters(), lr=0.001)
+            opt.load_state_dict(opt_state)
+        else:
+            opt = optim.AdamW(model.parameters(), lr=0.001)
+
+        config = {
+            "emb_size": EMB_SIZE,
+            "batch_size": BATCH_SIZE,
+            "neg_samples": NEG,
+            "temp": TEMP,
+            "learnable_temp": LT,
+            "multiplier": MUL,
+            "weight": WEIGHT,
+            "prj": PRJ,
+            "nusers": NUSERS,
+            "prj_size": MUSIC_EMB_SIZE,
+        }
+
+        # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        #                     optimizer, "min", factor=0.2, patience=PAT // 2
+        #                 )
+
+        print(f"[MAIN] Starting run {run_name}")
+        print(f"[MAIN] With parameters:")
+        for k, v in config.items():
+            print(f"[MAIN] {k}: {v}")
+
+        best_auc = 0
+        pat = PAT
+
+        for epoch in range(EPOCHS):
+
+            print(f"Epoch {epoch}")
+
+            losses = train_loop(model, train_dataloader, opt, WEIGHT, LOG, LOG_EVERY)
+            roc_auc, pr_auc = eval_auc_loop(model, val_dataloader)
+
+            if LOG:
+                wandb.log(
+                    {
+                        "mean_loss": np.mean(losses),
+                        "roc_auc": roc_auc,
+                        "pr_auc": pr_auc,
+                    }
+                )
+
+            if roc_auc > best_auc:
+                best_auc = roc_auc
+                model_savefile = {
+                    "model": model.state_dict(),
+                    "optimizer": opt.state_dict(),
+                    "config": config,
+                }
+                torch.save(model_savefile, f"{save_path}/{run_name}_best.pt")
+                pat = PAT
+            else:
+                pat -= 1
+                if pat == 0:
+                    break
+            print(
+                f"loss {round(np.mean(losses),3)} roc_auc {round(roc_auc,3)} pr_auc {round(pr_auc,3)}"
+            )
+            # print(loss)
+
+    if LOG:
+        wandb.finish()

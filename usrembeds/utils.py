@@ -26,6 +26,15 @@ def plot_music_batch(emb, device):
     plt.show()
 
 
+def load_model(model_path, device="cuda"):
+    model_savefile = torch.load(model_path, map_location=device, weights_only=False)
+    state_dict = model_savefile["model"]
+    config = model_savefile["config"]
+    opt_state = model_savefile["optimizer"]
+
+    return state_dict, config, opt_state
+
+
 def get_args():
     """
     Function to get the arguments from the command line
@@ -40,7 +49,7 @@ def get_args():
 
     parser.add_argument(
         "-E",
-        "--embeds",
+        "--emb_size",
         type=int,
         help="User embdedding size",
         default=100,
@@ -48,7 +57,7 @@ def get_args():
 
     parser.add_argument(
         "-B",
-        "--batch",
+        "--batch_size",
         type=int,
         help="Batch size",
         default=16,
@@ -56,18 +65,10 @@ def get_args():
 
     parser.add_argument(
         "-N",
-        "--neg",
+        "--neg_samples",
         type=int,
         help="Number of negative samples",
         default=20,
-    )
-
-    parser.add_argument(
-        "-S",
-        "--subset",
-        type=int,
-        help="Only load a subset of the data",
-        default=100,
     )
 
     parser.add_argument(
@@ -116,6 +117,14 @@ def get_args():
         type=str,
         help="Define the projection type [bn, ln, linear]",
         default="bn",
+    )
+
+    parser.add_argument(
+        "-L",
+        "--load",
+        type=str,
+        help="Load model and corresponding config from a checkpoint",
+        default="",
     )
 
     args = vars(parser.parse_args())
