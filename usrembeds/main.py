@@ -128,7 +128,7 @@ def train_loop(model, train_loader, opt, weight, log=False, log_every=100):
         out = urs_x.unsqueeze(1)
 
         loss = weighted_contrastive_loss(
-            out, posemb, negemb, weights, weight, temp=temp
+            out, posemb_out, negemb_out, weights, weight, temp=temp
         )
         # breakpoint()
         if itr % log_every == 0 and log:
