@@ -387,10 +387,10 @@ class LivePlotter(Logger):
 
         self._visualization = visualization
 
-        if visualization:
-            # Set up the target status
-            self._target_status = target_status
+        # Set up the target status
+        self._target_status = target_status
 
+        if visualization:
             # Create a figure with three subplots: 2D Evolution, 3D Embeddings, and 2D Embeddings
             self._fig = plt.figure(figsize=(15, 7), dpi=100)  # Increased width to accommodate an extra subplot
 
