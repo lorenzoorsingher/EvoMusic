@@ -3,7 +3,7 @@ import evotorch
 import torch
 import torchaudio
 from evotorch import Problem, Solution
-from evotorch.algorithms import CMAES, SearchAlgorithm
+from evotorch.algorithms import CMAES, SearchAlgorithm, PGPE, XNES, SNES, CEM
 from evotorch.algorithms.searchalgorithm import SinglePopulationAlgorithmMixin
 from diffusers import DiffusionPipeline
 from diffusers.utils.testing_utils import enable_full_determinism
@@ -41,12 +41,12 @@ from riffusion.spectrogram_params import SpectrogramParams
 load_dotenv()
 
 # Paths and IDs
-TARGET_AUDIO_PATH = "generated_audio/breaking_me_down.mp3"  # <-- Replace with your actual target audio path
+TARGET_AUDIO_PATH = "generated_audio/generated_music.wav"  # <-- Replace with your actual target audio path
 MODEL_ID = "riffusion/riffusion-model-v1"
-# LLM_API_URL = "http://127.0.0.1:1234/v1/chat/completions"  # Ensure this is your running LLM API endpoint
-# LLM_MODEL = "llama-3.2-1b-instruct"  # Ensure this matches your LLM model
-LLM_API_URL = "https://api.openai.com/v1/chat/completions"
-LLM_MODEL = "gpt-4o-mini"
+LLM_API_URL = "http://127.0.0.1:1234/v1/chat/completions"  # Ensure this is your running LLM API endpoint
+LLM_MODEL = "llama-3.2-1b-instruct"  # Ensure this matches your LLM model
+# LLM_API_URL = "https://api.openai.com/v1/chat/completions"
+# LLM_MODEL = "gpt-4o-mini"
 API_KEY = os.getenv("API_KEY")
 
 # Device configuration
@@ -55,26 +55,29 @@ PROBLEM_DEVICE = "cpu"  # Problem is run on CPU to avoid memory issues
 
 # Evolutionary Algorithm Parameters
 POPULATION_SIZE = 50
-ELITES = 0.1
-CROSS_MUTATION = 0
-NOVEL_PROMPTS = 0.1
-TOURNAMENT_SIZE = 5
+TEMPERATURE_GENERATION = 1.5
 NUM_GENERATIONS = 100
 
-
+# parameters for generation
 NUM_INFERENCE_STEPS = 50
 DURATION = 5  # in seconds
-HOP_SIZE = 0.1
-
-TEMPERATURE_GENERATION = 0.8
-TEMPERATURE_EVOLVE = 0.5
 
 # Optimization Mode
 # Set to True for prompt optimization, False for embedding optimization
 PROMPT_OPTIM = False
+
+# PROMPT OPTIM params
+ELITES = 0
+CROSS_MUTATION = 0
+NOVEL_PROMPTS = 0.1
+TOURNAMENT_SIZE = 5
+TEMPERATURE_EVOLVE = 0.8
+MAX_HISTORY = 10
+
+# EMBED OPTIM params
 EMB_SIZE = 768 # Embedding size for CLIP model
-MAX_SEQ_LEN = 10  # Maximum sequence length for CLIP model (should be 77)
-USE_CMAES = True # Set to True to use CMA-ES instead of custom Searcher
+MAX_SEQ_LEN = 5  # Maximum sequence length for CLIP model (should be 77)
+SEARCHER = "cmaes"  # Choose between "cmaes", "pgpe", "xnes", "snes", "cem"
 
 VISUALIZATION = True
 
@@ -337,6 +340,8 @@ class PromptOptimizationProblem(Problem):
         prompts = []
         population = values.shape[0]
 
+        print(f"Generating diverse prompts for the initial population of {population} solutions...")
+
         prompt_length = ""
         if not self.prompt_optim:
             prompt_length = f" of maximum {MAX_SEQ_LEN} words each"
@@ -360,6 +365,7 @@ class PromptOptimizationProblem(Problem):
         else:
             # use pipe text_encoder to encode the prompts
             with torch.no_grad():
+                # set max lenght of the prompt to MAX_SEQ_LEN
                 outputs = pipe.encode_prompt(prompts, device=DEVICE, num_images_per_prompt=1, do_classifier_free_guidance=True)
                 embeddings = outputs[0]
             values.copy_(embeddings.view(population, -1)[:, :EMB_SIZE * MAX_SEQ_LEN])
@@ -367,7 +373,9 @@ class PromptOptimizationProblem(Problem):
         # del outputs, embeddings
         return values
 
-matplotlib.use("TkAgg")
+if VISUALIZATION:
+    matplotlib.use("TkAgg")
+
 class LivePlotter(Logger):
     def __init__(self, searcher, problem, target_status: str, visualization=VISUALIZATION):
         # Call the super constructor
@@ -623,7 +631,7 @@ class LivePlotter(Logger):
 # ------------------------- Evolutionary Algorithm ------------------------
 
 class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
-    def __init__(self, problem:Problem, elites=ELITES, cross_mutation=CROSS_MUTATION, tournament_size=TOURNAMENT_SIZE, novel_prompts = NOVEL_PROMPTS):
+    def __init__(self, problem:Problem, elites=ELITES, cross_mutation=CROSS_MUTATION, tournament_size=TOURNAMENT_SIZE, novel_prompts = NOVEL_PROMPTS, max_history=MAX_HISTORY):
         SearchAlgorithm.__init__(self, problem)
 
         self._problem = problem
@@ -633,8 +641,12 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         self._cross_mutation = cross_mutation
         self._tournament_size = tournament_size
         self._novel_prompts = novel_prompts
+        self._max_history = max_history
         self.best = None
-        self.old_gen = ""
+        self.best_overall = None
+        self.best_overall_score = -1
+        self.old_gen = []
+        self.generations = 1
 
         SinglePopulationAlgorithmMixin.__init__(self)
 
@@ -650,12 +662,20 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
 
         ranking = ""
         for i in range(len(indices)):
-            ranking += f"{i+1}. <p> {self._problem.prompts[indices[i]]} </p> - {self._population[indices[i]].evals.item()*50+50} / 100\n"
+            ranking += f"{i+1}. <p>{self._problem.prompts[indices[i]]}</p> - {self._population[indices[i]].evals.item()*50+50} / 100\n"
 
         print("Pop Best", indices[0], ":", 
               self._problem.prompts[indices[0]], 
-              self._population[indices[i]].evals.item()*50+50)
-        
+              self._population[indices[0]].evals.item()*50+50)
+        self.old_gen.append(f"\t- Generation {self.generations}:<p>{self._problem.prompts[indices[0]]}</p> - {self._population[indices[0]].evals.item()*50+50} / 100\n")
+        # keep the dimension contained
+        self.old_gen[:self._max_history]
+        self.generations += 1
+
+        if self._population[indices[0]].evals.item() > self.best_overall_score:
+            self.best_overall = self._problem.prompts[indices[0]]
+            self.best_overall_score = self._population[indices[0]].evals.item()
+
         self.best = self._problem.prompts[indices[0]]
 
         # keep some solutions sampled from the population with probability proportional to their fitness rank
@@ -701,18 +721,22 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
 
         # Update the population using LLM by giving it the scores of each prompt and asking for new ones
         while len(new_prompts) < self._population_size:
-            LLM_prompt = f"""
-Generate ONLY {self._population_size-len(new_prompts)} creative and diverse music prompts for generating music based on the classification and scores of the previous prompts. 
+            LLM_prompt = f"""Generate {self._population_size-len(new_prompts)} music prompts for generating music based on the classification and scores of the previous prompts. 
 You should balance exploration and exploitation to maximize the score.
-Before outputting the prompts, you should reason on the classification and scores of the previous prompts, and try to understand what makes a prompt successful for the user, and what makes it fail.
-Following this reasoning, you should generate a diverse set of prompts that are likely to be successful in the requested format and number.
+BEFORE giving the music prompts, you should spend time to reason on the classification and scores of the previous prompts, and understand what makes a prompt successful for the user, what makes it fail, how to combine the acquired knowledge and where we are not exploring, for example if a music generne is not being explored or if the prompts are too similar.
+You should also try to understand and reason about the user preferences based on the scores and the classification of the prompts, and how to exploit this knowledge to generate better prompts.
+AFTER this careful reasoning about the current evaluation, you should generate a diverse set of prompts that are likely to be successful tying to not repeat te same patterns and content in the requested format.
 
-The previous generation was:
+Here is the current population with their similarity scores and ranking for the current generation:
+{ranking}
+
+And here is the history of the previous best prompts for each generation, you should integrate this knowledge in your reasoning to avoid repeating the same patterns and explore new ones:
 {self.old_gen}
 
-And here is the current population with their similarity scores and ranking for the current generation:
-{ranking}
-                """
+The best prompt ever found in all generations is the following:
+{self.best_overall} - {self.best_overall_score*50+50} / 100
+
+after the reasonin, generate only the next generation of prompts with a population of {self._population_size-len(new_prompts)} prompts."""
             answers = query_llm(LLM_prompt, temperature=TEMPERATURE_EVOLVE)
 
             # match the number of <p> and </p> tags if not equal then ignore the prompt
@@ -724,8 +748,6 @@ And here is the current population with their similarity scores and ranking for 
                     new_prompts.append(answer[answer.index("<p>")+3:].strip())
                 if len(new_prompts) >= self._population_size:
                     break
-            
-        self.old_gen = ranking
 
         print("Current Population:\n\t- ", "\n\t- ".join(self._problem.prompts))
         print("New Population:\n\t- ", "\n\t- ".join(new_prompts))
@@ -744,11 +766,19 @@ def evolve_prompts(problem, generations=NUM_GENERATIONS):
         # Initialize the custom PromptSearcher optimizer
         optimizer = PromptSearcher(problem)
     else:
-        # Initialize the CMA-ES optimizer for embedding optimization
-        if USE_CMAES:
-            optimizer = CMAES(problem, stdev_init=0.1, popsize=POPULATION_SIZE)
+        # Initialize the optimizer for embedding optimization
+        if SEARCHER == "cmaes":
+            optimizer = CMAES(problem, stdev_init=1, popsize=POPULATION_SIZE)
+        elif SEARCHER == "pgpe":
+            optimizer = PGPE(problem, popsize=POPULATION_SIZE, center_learning_rate=1, stdev_learning_rate=1, stdev_init=1)
+        elif SEARCHER == "xnes":
+            optimizer = XNES(problem, popsize=POPULATION_SIZE, stdev_init=1)
+        elif SEARCHER == "snes":
+            optimizer = SNES(problem, popsize=POPULATION_SIZE, stdev_init=1)
+        elif SEARCHER == "cem":
+            optimizer = CEM(problem, popsize=POPULATION_SIZE, stdev_init=1)
         else:
-            optimizer = evotorch.algorithms.PGPE(problem, popsize=POPULATION_SIZE, center_learning_rate=1, stdev_learning_rate=1, stdev_init=1)
+            raise ValueError("Invalid searcher specified. Choose between 'cmaes' and 'pgpe'.")
 
     # Run the evolution strategy
     print("Starting evolution...")
@@ -795,7 +825,7 @@ if __name__ == "__main__":
 
     if VISUALIZATION:        
         import gradio as gr
-        
+
         with gr.Blocks() as demo:
             gr.Markdown("## Best Generated Music 🎶")
             output_audio = gr.Audio(label="Generated Music", value=final_audio_path)
