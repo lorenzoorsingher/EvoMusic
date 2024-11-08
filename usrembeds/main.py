@@ -1,22 +1,20 @@
-import torchopenl3
 import torch
-import numpy as np
-
-from datautils.dataset import MusicDataset, ContrDataset
-from models.model import Aligner
-from utils import get_args, load_model
-import torch.nn as nn
-
-from torch import optim
-
-from tqdm import tqdm
-
-from dotenv import load_dotenv
 import os
 import wandb
 import datetime
+import torchopenl3
+import numpy as np
 
+import torch.nn as nn
 from sklearn.metrics import roc_curve, roc_auc_score, average_precision_score
+
+from torch import optim
+from tqdm import tqdm
+from dotenv import load_dotenv
+
+from datautils.dataset import MusicDataset, ContrDataset
+from models.model import Aligner
+from utils import get_args
 
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
@@ -96,11 +94,13 @@ def eval_auc_loop(model, val_loader):
     # Calculate PR AUC
     pr_auc = average_precision_score(labels, scores)
 
-    model.train()
     return roc_auc, pr_auc
 
 
 def train_loop(model, train_loader, opt, weight, log=False, log_every=100):
+
+    model.train()
+
     losses = []
     for itr, tracks in tqdm(enumerate(train_loader)):
 
@@ -187,7 +187,7 @@ if __name__ == "__main__":
         ]
     else:
         print("[LOADER] Loading parameters from checkpoint")
-        model_state, config, opt_state = load_model(LOAD)
+        model_state, config, opt_state = Aligner.load_model(LOAD)
         experiments = [config]
 
     LOG = not args["no_log"]
@@ -224,7 +224,6 @@ if __name__ == "__main__":
         run_name = f"run_{timestamp}"
         if LOG:
             wandb.init(
-                # set the wandb project where this run will be logged
                 project="BIO",
                 name=run_name,
                 config={

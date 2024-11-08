@@ -26,15 +26,6 @@ def plot_music_batch(emb, device):
     plt.show()
 
 
-def load_model(model_path, device="cuda"):
-    model_savefile = torch.load(model_path, map_location=device, weights_only=False)
-    state_dict = model_savefile["model"]
-    config = model_savefile["config"]
-    opt_state = model_savefile["optimizer"]
-
-    return state_dict, config, opt_state
-
-
 def get_args():
     """
     Function to get the arguments from the command line

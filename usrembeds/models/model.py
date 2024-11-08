@@ -13,20 +13,9 @@ class Aligner(nn.Module):
         prj_type="linear",
         lt=False,
         temp=0.07,
-        config=None,
     ):
 
         super(Aligner, self).__init__()
-
-        if config is not None:
-
-            n_users = config["nusers"]
-            emb_size = config["emb_size"]
-            prj_size = config["prj_size"]
-            prj_type = config["prj"]
-            temp = config["temp"]
-            lt = config["learnable_temp"]
-            temp = config["temp"]
 
         self.prj_type = prj_type
 
@@ -58,7 +47,6 @@ class Aligner(nn.Module):
         user_embs = self.users(idx)
 
         usr_x = F.gelu(self.fc1(user_embs))
-        # usr_x = F.gelu(self.fcmid(usr_x))
         usr_x = self.dropmid(usr_x)
         usr_x = self.fc2(usr_x)
 
@@ -74,3 +62,11 @@ class Aligner(nn.Module):
             music_x = music_x.permute(0, 2, 1)
 
         return usr_x, music_x, self.temp
+
+    def load_model(model_path, device="cuda"):
+        model_savefile = torch.load(model_path, map_location=device, weights_only=False)
+        state_dict = model_savefile["model"]
+        config = model_savefile["config"]
+        opt_state = model_savefile["optimizer"]
+
+        return state_dict, config, opt_state
