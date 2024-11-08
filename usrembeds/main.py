@@ -173,16 +173,16 @@ if __name__ == "__main__":
         experiments = [
             {
                 "temp": 0.15,
-                "lt": False,
+                "learnable_temp": False,
             },
             {
                 "temp": 0.15,
-                "lt": True,
+                "learnable_temp": True,
                 "weight": 0.5,
             },
             {
                 "temp": 1,
-                "lt": True,
+                "learnable_temp": True,
             },
         ]
     else:
@@ -270,7 +270,7 @@ if __name__ == "__main__":
             temp=TEMP,
         ).to(DEVICE)
 
-        if LOAD != "":
+        if LOAD != "" and LOAD != "exp":
             model.load_state_dict(model_state)
             opt = optim.AdamW(model.parameters(), lr=0.001)
             opt.load_state_dict(opt_state)
@@ -336,5 +336,10 @@ if __name__ == "__main__":
             )
             # print(loss)
 
-    if LOG:
-        wandb.finish()
+        if LOG:
+            wandb.log(
+                {
+                    "best_auc": best_auc,
+                }
+            )
+            wandb.finish()
