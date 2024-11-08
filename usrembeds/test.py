@@ -100,7 +100,7 @@ if __name__ == "__main__":
 
     trues = 0
     numel = 0
-    for tracks in tqdm(train_dataloader):
+    for tracks in tqdm(val_dataloader):
 
         # [B]
         # [B, 1, EMB]
@@ -143,4 +143,32 @@ if __name__ == "__main__":
         trues += comp.sum().item()
         numel += comp.numel()
 
-        print(f"Accuracy: {trues / numel}")
+    np_pos = positives.cpu().detach().numpy()
+    np_neg = negatives.cpu().detach().numpy()
+    scores = np.concatenate((np_pos, np_neg))
+    labels = [1] * len(np_pos) + [0] * len(np_neg)
+
+    fpr, tpr, thresholds = roc_curve(labels, scores)
+
+    roc_auc = roc_auc_score(labels, scores)
+    # print(f"ROC AUC: {roc_auc}")
+
+    # Calculate PR AUC
+    pr_auc = average_precision_score(labels, scores)
+    # print(f"Precision-Recall AUC: {pr_auc}")
+
+    print(f"ROC AUC: {roc_auc}")
+    print(f"PR AUC: {pr_auc}")
+    print(f"Accuracy: {trues / numel}")
+
+    import matplotlib.pyplot as plt
+
+    plt.plot(fpr, tpr, label="ROC Curve")
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curve for Embedding Similarity")
+    plt.legend(loc="best")
+    plt.show()
+    # breakpoint()
+    # # scores = [possim] + negsim
+    # # labels = [1] + [0] * len(negsim)
