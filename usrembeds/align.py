@@ -76,7 +76,7 @@ if __name__ == "__main__":
     )
 
     # load wav file
-    track_path = "/home/lollo/Documents/python/BIO/project/scraper/music/7zYoeHLPNU3X7AI9tuQHkE_Slipping Away.mp3"
+    track_path = "/your/music/folder/trap.mp3"
     audio = load_wav(track_path, TARGET_SR, AUDIO_LEN)
 
     # extract audio embeddings from wav
