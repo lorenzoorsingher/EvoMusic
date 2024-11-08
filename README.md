@@ -6,57 +6,29 @@ just define the path to the folder containing the audio, the stats csv file and 
 
 If needed redefine the `__getitem__` method in the MusicDataset class to fit the needs of your model
 
-# ALIGNER
+# FROM MP3 TO COSSIM
 
-To load the Aligner model follow the code in test.py
+These steps are implemented in the `aligner.py` file, follow them to get from the mp3 file to the cosine similarity between the user embeddings and the music embeddings. User embeddings are stored in the model and correspond to the 1000 users in the Last.fm dataset (actually is a bit less than 1000 because not all users have listened to music avaiable to us).
 
-Load model and config from a checkpoint
+Load model and config from checkpoint
 
 ```python
 LOAD = "usrembeds/checkpoints/run_20241107_201542_best.pt"
 model_state, config, _ = Aligner.load_model(LOAD)
 ```
 
-load the dataset and dataloader
+Load the Aligner model with the settings stored in the config
 
 ```python
-
-# you rly only need these two in training
-NEG = config["neg_samples"] # number of negative samples
-MUL = config["multiplier"]  # multiplier for the dataset
-
-membs_path = "usrembeds/data/embeddings/batched"
-save_path = "usrembeds/checkpoints"
-
-dataset = ContrDataset(
-    membs_path,
-    stats_path,
-    nneg=NEG,
-    multiplier=MUL,
-    transform=None,
-)
-
-_, val_dataset = torch.utils.data.random_split(dataset, [0.8, 0.2])
-
-NUSERS = dataset.nusers
-
-val_dataloader = torch.utils.data.DataLoader(
-    val_dataset, batch_size=16, shuffle=True
-)
-```
-
-Instantiate the model with the config and load the state
-
-```python
-EMB_SIZE = config["emb_size"]       # size of the user embeddings
-MUSIC_EMB_SIZE = config["prj_size"] # size of the music embeddings (512 with OpenL3)
-PRJ = config["prj"]                 # projection type
-
-# these are only for training
+EMB_SIZE = config["emb_size"]
+MUSIC_EMB_SIZE = config["prj_size"]
 TEMP = config["temp"]
 LT = config["learnable_temp"]
+PRJ = config["prj"]
+NUSERS = config["nusers"]
 
-model = Aligner(
+# load aligner model
+align_model = Aligner(
     n_users=NUSERS,
     emb_size=EMB_SIZE,
     prj_size=MUSIC_EMB_SIZE,
@@ -65,32 +37,65 @@ model = Aligner(
     temp=TEMP,
 ).to(DEVICE)
 
-model.load_state_dict(model_state)
+align_model.load_state_dict(model_state)
+align_model.eval()
 ```
 
-Have fun with the model
+Load the music encoder, in this case we are using OpenL3, we might swtich to MERT later on
 
 ```python
-for tracks in tqdm(val_dataloader):
+# audio extraction setting
+HOP_SIZE = 0.1  # hop size defined in the paper
+TARGET_SR = torchopenl3.core.TARGET_SR
+AUDIO_LEN = 3
 
-        # [B]               indexes of the users
-        # [B, 1, EMB]       positive embeddings
-        # [B, NNEG, EMB]    sets of negative embeddings
-        # [B]               weights for the loss
-        idx, posemb, negemb, weights = tracks
-
-        idx = idx.to(DEVICE)
-        posemb = posemb.to(DEVICE)
-        negemb = negemb.to(DEVICE)
-        weights = weights.to(DEVICE)
-
-        # if you don't care about positive/negative samples and you just need
-        # the user embeddings and the projected music embeddings you just give
-        # the model the user indexes [B] and your sets of music embeddings [B, N, EMB]
-        allemb = torch.cat((posemb, negemb), dim=1)
-
-        urs_x, embs, _ = model(idx, allemb)
-
-        # urs_x is the user embeddings [B, EMB]
-        # embs is the projected music embs [B, N, EMB]
+# load embedder model
+embed_model = torchopenl3.core.load_audio_embedding_model(
+    input_repr="mel256",
+    content_type="music",
+    embedding_size=MUSIC_EMB_SIZE,
+)
 ```
+
+Load the mp3 file from disk
+
+```python
+track_path = "/your/music/folder/trap.mp3"
+audio = load_wav(track_path, TARGET_SR, AUDIO_LEN)
+```
+
+Extract the embeddings from the audio and average over all frames
+
+```python
+
+# extract audio embeddings from wav
+emb, ts = torchopenl3.get_audio_embedding(
+    audio,
+    TARGET_SR,
+    model=embed_model,
+    hop_size=HOP_SIZE,
+    embedding_size=MUSIC_EMB_SIZE,
+)
+
+mean_emb = emb.mean(axis=1)
+```
+
+Reshape the user indexes tensor and the music embeddings tensor to the right shapes
+
+```python
+# [1]
+# [1, 1, EMB]
+usr_idx = torch.tensor([34], dtype=torch.int32).to(DEVICE)
+batched_emb = mean_emb.unsqueeze(0)
+```
+
+Run the model with the user indexes and the music embeddings, you will
+get the user embeddings and the projected music embeddings
+
+```python
+# [B, EMB]
+# [B, N, EMB]
+urs_x, embs, _ = align_model(usr_idx, batched_emb)
+```
+
+`N` is the number of songs for every batch, in this case we are only running one batch with one song

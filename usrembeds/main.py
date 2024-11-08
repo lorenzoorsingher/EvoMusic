@@ -120,17 +120,15 @@ def train_loop(model, train_loader, opt, weight, log=False, log_every=100):
 
         urs_x, embs, temp = model(idx, allemb)
 
-        # breakpoint()
         posemb_out = embs[:, 0, :].unsqueeze(dim=1)
         negemb_out = embs[:, 1:, :]
 
-        # breakpoint()
         out = urs_x.unsqueeze(1)
 
         loss = weighted_contrastive_loss(
             out, posemb_out, negemb_out, weights, weight, temp=temp
         )
-        # breakpoint()
+
         if itr % log_every == 0 and log:
             if LT:
                 wandb.log({"loss": loss.item(), "temp": temp.item()})

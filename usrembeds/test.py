@@ -76,12 +76,11 @@ if __name__ == "__main__":
         # [B]
         # [B, 1, EMB]
         # [B, NNEG, EMB]
-        idx, posemb, negemb, weights = tracks
+        idx, posemb, negemb, _ = tracks
 
         idx = idx.to(DEVICE)
         posemb = posemb.to(DEVICE)
         negemb = negemb.to(DEVICE)
-        weights = weights.to(DEVICE)
 
         allemb = torch.cat((posemb, negemb), dim=1)
 
