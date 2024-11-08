@@ -77,7 +77,7 @@ if __name__ == "__main__":
         # [B, 1, EMB]
         # [B, NNEG, EMB]
         idx, posemb, negemb, weights = tracks
-        breakpoint()
+
         idx = idx.to(DEVICE)
         posemb = posemb.to(DEVICE)
         negemb = negemb.to(DEVICE)
