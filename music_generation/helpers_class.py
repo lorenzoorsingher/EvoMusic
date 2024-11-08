@@ -1,15 +1,11 @@
 import math
 import os
-from typing import Optional, Union
 
 import transformers
 import torch
-from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
 from torch import nn
-from diffusers import (DiffusionPipeline, AutoencoderKL, UNet2DConditionModel, DDIMScheduler, PNDMScheduler,
-                       LMSDiscreteScheduler)
-from transformers import CLIPTokenizer, CLIPTextModel, AutoTokenizer, CLIPFeatureExtractor, \
-    MusicgenForConditionalGeneration
+from diffusers import DiffusionPipeline
+from transformers import AutoProcessor, MusicgenForConditionalGeneration
 
 from riffusion.spectrogram_image_converter import SpectrogramImageConverter
 from riffusion.spectrogram_params import SpectrogramParams
