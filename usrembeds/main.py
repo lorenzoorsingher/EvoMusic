@@ -38,13 +38,13 @@ def weighted_contrastive_loss(out, posemb, negemb, weights, loss_weight, temp=0.
     return loss
 
 
-def eval_auc_loop(model, val_loader):
+def eval_auc_loop(model, val_loader, weight=0):
 
     model.eval()
 
     positives = torch.empty(0).to(DEVICE)
     negatives = torch.empty(0).to(DEVICE)
-
+    val_losses = []
     for tracks in tqdm(val_loader):
 
         # [B]
@@ -59,7 +59,7 @@ def eval_auc_loop(model, val_loader):
 
         allemb = torch.cat((posemb, negemb), dim=1)
 
-        urs_x, embs, _ = model(idx, allemb)
+        urs_x, embs, temp = model(idx, allemb)
 
         # breakpoint()
         posemb_out = embs[:, 0, :].unsqueeze(dim=1)
@@ -67,7 +67,12 @@ def eval_auc_loop(model, val_loader):
 
         # breakpoint()
         out = urs_x.unsqueeze(1)
-        # breakpoint()
+
+        val_loss = weighted_contrastive_loss(
+            out, posemb_out, negemb_out, weights, weight, temp=temp
+        )
+
+        val_losses.append(val_loss.item())
 
         # breakpoint()
         cos = nn.CosineSimilarity(dim=2, eps=1e-6)
@@ -94,7 +99,7 @@ def eval_auc_loop(model, val_loader):
     # Calculate PR AUC
     pr_auc = average_precision_score(labels, scores)
 
-    return roc_auc, pr_auc
+    return roc_auc, pr_auc, val_losses
 
 
 def train_loop(model, train_loader, opt, weight, log=False, log_every=100):
@@ -274,6 +279,10 @@ if __name__ == "__main__":
         else:
             opt = optim.AdamW(model.parameters(), lr=0.001)
 
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            opt, "min", factor=0.2, patience=PAT // 2
+        )
+
         config = {
             "emb_size": EMB_SIZE,
             "batch_size": BATCH_SIZE,
@@ -304,12 +313,15 @@ if __name__ == "__main__":
             print(f"Epoch {epoch}")
 
             losses = train_loop(model, train_dataloader, opt, WEIGHT, LOG, LOG_EVERY)
-            roc_auc, pr_auc = eval_auc_loop(model, val_dataloader)
+            roc_auc, pr_auc, val_losses = eval_auc_loop(model, val_dataloader, WEIGHT)
+
+            scheduler.step(np.mean(val_losses))
 
             if LOG:
                 wandb.log(
                     {
                         "mean_loss": np.mean(losses),
+                        "val_loss": np.mean(val_losses),
                         "roc_auc": roc_auc,
                         "pr_auc": pr_auc,
                     }
