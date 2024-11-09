@@ -8,9 +8,9 @@ from transformers import AutoModel, Wav2Vec2FeatureExtractor
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 if __name__ == "__main__":
-    music_path = "generated_audio/songs"
-    stats_path = "generated_audio/clean_stats.csv"
-    emb_path = "generated_audio/embeddings"
+    music_path = "D:/music"
+    stats_path = "embeddings/clean_stats.csv"
+    emb_path = "embeddings"
 
     SAVE_RATE = 500  # Save every 500 tracks
     BATCH_SIZE = 32
@@ -20,7 +20,7 @@ if __name__ == "__main__":
         music_path,
         stats_path,
         resample=24000,  # MERT-v1-95M expects 24kHz audio
-        repeat=3,
+        repeat=1,
     )
     dataloader = torch.utils.data.DataLoader(
         dataset,
@@ -34,10 +34,9 @@ if __name__ == "__main__":
 
     emb_dict = {"metadata": {"model": "MERT-v1-95M"}}
     part = 0
-
+    mean_time = 0
+    start_time = time.time()
     for idx, track in enumerate(dataloader):
-        start_time = time.time()
-
         stat, audio = track
         audio = audio.to(DEVICE)
 
@@ -64,7 +63,11 @@ if __name__ == "__main__":
             emb_dict = {}
 
         end_time = time.time()
-        print(f"Processed {idx + 1}/{len(dataloader)} batches in {(end_time - start_time):.2f} seconds")
+        mean_time = (mean_time * idx + (end_time - start_time)) / (idx + 1)
+        print(f"Processed {idx + 1}/{len(dataloader)} batches in {(end_time - start_time):.2f} seconds (mean: {mean_time:.2f})")
+        remaining_time = (len(dataloader) - idx - 1) * mean_time
+        print(f"Estimated time remaining: {remaining_time/60/60:.0f}h {remaining_time/60%60:.0f}m {remaining_time%60:.0f}s")
+        start_time = time.time()
 
     # Save any remaining embeddings
     if emb_dict:
