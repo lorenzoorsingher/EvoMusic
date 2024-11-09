@@ -22,8 +22,8 @@ class Aligner(nn.Module):
         self.users = nn.Embedding(n_users, emb_size)
 
         self.fc1 = nn.Linear(emb_size, 4096)
-        self.fcmid = nn.Linear(4096, 4096)
-        self.dropmid = nn.Dropout(0.25)
+        # self.fcmid = nn.Linear(4096, 4096)
+        self.dropmid = nn.Dropout(0.5)
         self.fc2 = nn.Linear(4096, prj_size)
 
         self.temp = temp
