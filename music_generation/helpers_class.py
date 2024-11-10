@@ -1,11 +1,9 @@
 import math
 import os
-
-import transformers
+import scipy
 import torch
-from torch import nn
 from diffusers import DiffusionPipeline
-from transformers import AutoProcessor, MusicgenForConditionalGeneration
+from transformers import AutoProcessor, MusicgenForConditionalGeneration, T5EncoderModel
 
 from riffusion.spectrogram_image_converter import SpectrogramImageConverter
 from riffusion.spectrogram_params import SpectrogramParams
@@ -15,6 +13,7 @@ RIFFUSION_MODEL_ID = "riffusion/riffusion-model-v1"
 MUSICGEN_MODEL_ID = "facebook/musicgen-small"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TEST = "musicgen"  # "riffusion"
+
 
 def dummy_safety_checker(images, **kwargs):
     return images, [False] * len(images)
@@ -36,24 +35,26 @@ class EasyRiffPipeline(EasyDiffuse):
         super().__init__()
         self.model = DiffusionPipeline.from_pretrained(RIFFUSION_MODEL_ID).to(DEVICE)
 
-
     def text_to_embed(self, text, max_length=None):
         if max_length is None:
             max_length = self.model.tokenizer.model_max_length
-        inputs = self.model.tokenizer(text, padding="max_length", max_length=max_length, truncation=True, return_tensors="pt")
+        inputs = self.model.tokenizer(text, padding="max_length", max_length=max_length, truncation=True,
+                                      return_tensors="pt")
         with torch.no_grad():
             embedded_text = self.model.text_encoder(inputs.input_ids.to(self.model.device))
         return embedded_text.last_hidden_state
 
     def token_embedding_to_embed(self, token_embedding):
         with torch.no_grad():
-            encoded = self.model.text_encoder.text_model.encoder(token_embedding.to(self.model.device)).last_hidden_state
+            encoded = self.model.text_encoder.text_model.encoder(
+                token_embedding.to(self.model.device)).last_hidden_state
             return self.model.text_encoder.text_model.final_layer_norm(encoded)
 
     def text_to_embeddings_before_clip(self, text, max_length=None):
         if max_length is None:
             max_length = self.model.tokenizer.model_max_length
-        inputs = self.model.tokenizer(text, padding="max_length", max_length=max_length, truncation=True, return_tensors="pt")
+        inputs = self.model.tokenizer(text, padding="max_length", max_length=max_length, truncation=True,
+                                      return_tensors="pt")
         with torch.no_grad():
             return self.model.text_encoder.text_model.embeddings(inputs.input_ids.to(self.model.device))
 
@@ -61,21 +62,27 @@ class EasyRiffPipeline(EasyDiffuse):
         return self.model(*args, **kwargs)
 
 
-class MusicGenHelpers(EasyDiffuse):
+class MusicGenPipeline(EasyDiffuse):
     def __init__(self):
         super().__init__()
-        self.model = transformers.MusicgenForConditionalGeneration.from_pretrained(MUSICGEN_MODEL_ID)
+        self.processor = AutoProcessor.from_pretrained(MUSICGEN_MODEL_ID)
+        self.model = MusicgenForConditionalGeneration.from_pretrained(MUSICGEN_MODEL_ID)
 
     def text_to_embed(self, text, max_length=None):
         if max_length is None:
             max_length = self.model.tokenizer.model_max_length
-        inputs = self.model.tokenizer(text, padding="max_length", max_length=max_length, truncation=True, return_tensors="pt")
+        inputs = self.model.tokenizer(text, padding="max_length", max_length=max_length, truncation=True,
+                                      return_tensors="pt")
         with torch.no_grad():
             return self.model.get_encoder()(**inputs).last_hidden_state
 
-    def token_to_embed(self, tokens):
+    def token_embedding_to_embed(self, **token_embedding):
         with torch.no_grad():
-            return self.model.get_encoder()(**tokens).last_hidden_state
+            return self.model.text_encoder.encoder(**token_embedding)
+
+    def text_to_embeddings_before_encoder(self, input_ids, **kwargs):
+        with torch.no_grad():
+            return self.model.get_input_embeddings()(input_ids)
 
 
 if __name__ == "__main__":
