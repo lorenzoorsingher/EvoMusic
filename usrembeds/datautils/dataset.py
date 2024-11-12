@@ -45,7 +45,7 @@ class ContrDataset(Dataset):
         self.emb_list = [[] for _ in self.allkeys]
 
         print("[DATASET] Loading embeddings")
-        for num, file in tqdm(enumerate(embedding_files)):
+        for num, file in enumerate(tqdm(embedding_files)):
             with open(os.path.join(embs_dir, file), "r") as f:
                 data = json.load(f)
                 for key, value in data.items():

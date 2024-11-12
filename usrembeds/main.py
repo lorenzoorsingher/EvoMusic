@@ -107,7 +107,7 @@ def train_loop(model, train_loader, opt, weight, log=False, log_every=100):
     model.train()
 
     losses = []
-    for itr, tracks in tqdm(enumerate(train_loader)):
+    for itr, tracks in enumerate(tqdm(train_loader)):
 
         # [B]
         # [B, 1, EMB]
@@ -257,10 +257,17 @@ if __name__ == "__main__":
 
         NUSERS = dataset.nusers
         train_dataloader = torch.utils.data.DataLoader(
-            train_dataset, batch_size=BATCH_SIZE, shuffle=True
+            train_dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=True,
+            # pin_memory=True,
+            num_workers=8,
         )
         val_dataloader = torch.utils.data.DataLoader(
-            val_dataset, batch_size=16, shuffle=True
+            val_dataset,
+            batch_size=16,
+            shuffle=True,
+            num_workers=8,
         )
 
         model = Aligner(
