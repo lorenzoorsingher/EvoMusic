@@ -111,11 +111,25 @@ def get_args():
     )
 
     parser.add_argument(
+        "--prj-size",
+        type=int,
+        help="Size of the latent space",
+        default=512,
+    )
+
+    parser.add_argument(
         "-L",
         "--load",
         type=str,
         help="Load model and corresponding config from a checkpoint",
         default="",
+    )
+
+    parser.add_argument(
+        "--encoder",
+        type=str,
+        help="Encoder user for music embeddings [ol3, mert]",
+        default="ol3",
     )
 
     parser.add_argument(

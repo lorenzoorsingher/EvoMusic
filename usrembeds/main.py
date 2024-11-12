@@ -167,6 +167,7 @@ if __name__ == "__main__":
         "prj_size": 512,
         "drop": 0.35,
         "lr": 0.001,
+        "encoder": "ol3",
     }
 
     if LOAD == "":
@@ -217,7 +218,6 @@ if __name__ == "__main__":
 
         BATCH_SIZE = config["batch_size"]
         EMB_SIZE = config["emb_size"]
-        MUSIC_EMB_SIZE = config["prj_size"]
         NEG = config["neg_samples"]
         TEMP = config["temp"]
         LT = config["learnable_temp"]
@@ -226,9 +226,15 @@ if __name__ == "__main__":
         PRJ = config["prj"]
         DROP = config["drop"]
         LR = config["lr"]
+        ENCODER = config["encoder"]
 
-        membs_path = "usrembeds/data/embeddings/batched"
-        MERT_path = "usrembeds/data/embeddings/MERT_batched"
+        if ENCODER == "ol3":
+            membs_path = "usrembeds/data/embeddings/batched"
+            MUSIC_EMB_SIZE = 512
+        else:
+            membs_path = "usrembeds/data/embeddings/MERT_batched"
+            MUSIC_EMB_SIZE = 768
+
         stats_path = "clean_stats.csv"
         save_path = "usrembeds/checkpoints"
 
@@ -292,6 +298,7 @@ if __name__ == "__main__":
             "embeddings": membs_path,
             "dropout": DROP,
             "lr": LR,
+            "encoder": ENCODER,
         }
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
