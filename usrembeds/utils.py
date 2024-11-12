@@ -118,5 +118,21 @@ def get_args():
         default="",
     )
 
+    parser.add_argument(
+        "-D",
+        "--drop",
+        type=float,
+        help="Droupout rate",
+        default=0.35,
+    )
+
+    parser.add_argument(
+        "-LR",
+        "--lr",
+        type=float,
+        help="Learning rate",
+        default=0.001,
+    )
+
     args = vars(parser.parse_args())
     return args

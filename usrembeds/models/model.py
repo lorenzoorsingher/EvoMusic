@@ -13,6 +13,7 @@ class Aligner(nn.Module):
         prj_type="linear",
         lt=False,
         temp=0.07,
+        drop=0.35,
     ):
 
         super(Aligner, self).__init__()
@@ -21,10 +22,10 @@ class Aligner(nn.Module):
 
         self.users = nn.Embedding(n_users, emb_size)
 
-        self.fc1 = nn.Linear(emb_size, 4096)
+        self.fc1 = nn.Linear(emb_size, 2048)
         # self.fcmid = nn.Linear(4096, 4096)
-        self.dropmid = nn.Dropout(0.5)
-        self.fc2 = nn.Linear(4096, prj_size)
+        self.dropmid = nn.Dropout(drop)
+        self.fc2 = nn.Linear(2048, prj_size)
 
         self.temp = temp
         if lt:

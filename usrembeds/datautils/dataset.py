@@ -213,7 +213,12 @@ if __name__ == "__main__":
     stats_path = "clean_stats.csv"
 
     dataset = ContrDataset(membs_path, stats_path, transform=None)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=True)
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=8,
+        shuffle=True,
+        num_workers=8,
+    )
 
     for track in tqdm(dataloader):
         idx, posemb, negemb, weights = track

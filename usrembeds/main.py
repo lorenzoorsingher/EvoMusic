@@ -165,6 +165,8 @@ if __name__ == "__main__":
         "prj": "bn",
         "nusers": 1000,
         "prj_size": 512,
+        "drop": 0.35,
+        "lr": 0.001,
     }
 
     if LOAD == "":
@@ -222,26 +224,11 @@ if __name__ == "__main__":
         MUL = config["multiplier"]
         WEIGHT = config["weight"]
         PRJ = config["prj"]
-
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_name = f"run_{timestamp}"
-        if LOG:
-            wandb.init(
-                project="BIO",
-                name=run_name,
-                config={
-                    "emb_size": EMB_SIZE,
-                    "batch_size": BATCH_SIZE,
-                    "neg_samples": NEG,
-                    "temp": TEMP,
-                    "learnable_temp": LT,
-                    "multiplier": MUL,
-                    "weight": WEIGHT,
-                    "prj": PRJ,
-                },
-            )
+        DROP = config["drop"]
+        LR = config["lr"]
 
         membs_path = "usrembeds/data/embeddings/batched"
+        MERT_path = "usrembeds/data/embeddings/MERT_batched"
         stats_path = "clean_stats.csv"
         save_path = "usrembeds/checkpoints"
 
@@ -277,14 +264,15 @@ if __name__ == "__main__":
             prj_type=PRJ,
             lt=LT,
             temp=TEMP,
+            drop=DROP,
         ).to(DEVICE)
 
         if LOAD != "" and LOAD != "exp":
             model.load_state_dict(model_state)
-            opt = optim.AdamW(model.parameters(), lr=0.001)
+            opt = optim.AdamW(model.parameters(), lr=LR)
             opt.load_state_dict(opt_state)
         else:
-            opt = optim.AdamW(model.parameters(), lr=0.001)
+            opt = optim.AdamW(model.parameters(), lr=LR)
 
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             opt, "min", factor=0.2, patience=PAT // 2
@@ -301,11 +289,19 @@ if __name__ == "__main__":
             "prj": PRJ,
             "nusers": NUSERS,
             "prj_size": MUSIC_EMB_SIZE,
+            "embeddings": membs_path,
+            "dropout": DROP,
+            "lr": LR,
         }
 
-        # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        #                     optimizer, "min", factor=0.2, patience=PAT // 2
-        #                 )
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_name = f"run_{timestamp}"
+        if LOG:
+            wandb.init(
+                project="BIO",
+                name=run_name,
+                config=config,
+            )
 
         print(f"[MAIN] Starting run {run_name}")
         print(f"[MAIN] With parameters:")
@@ -348,7 +344,7 @@ if __name__ == "__main__":
                 if pat == 0:
                     break
             print(
-                f"loss {round(np.mean(losses),3)} roc_auc {round(roc_auc,3)} pr_auc {round(pr_auc,3)}"
+                f"loss {round(np.mean(losses),3)} roc_auc {round(roc_auc,3)} pr_auc {round(pr_auc,3)} PAT {pat}"
             )
             # print(loss)
 

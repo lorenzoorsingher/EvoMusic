@@ -170,7 +170,7 @@ cython_debug/
 *.csv
 *.pt
 *.pth
-
+*.rar
 
 # wandb
 wandb/

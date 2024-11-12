@@ -49,7 +49,10 @@ if __name__ == "__main__":
     NUSERS = dataset.nusers
 
     val_dataloader = torch.utils.data.DataLoader(
-        val_dataset, batch_size=16, shuffle=True
+        val_dataset,
+        batch_size=16,
+        shuffle=True,
+        num_workers=8,
     )
 
     # load model
