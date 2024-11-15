@@ -30,10 +30,10 @@ def weighted_contrastive_loss(out, posemb, negemb, weights, loss_weight, temp=0.
     # breakpoint()
     logits = torch.cat((possim, negsim), dim=1) / temp
     exp = torch.exp(logits)
-    loss = -torch.log(exp[:, 0] / torch.sum(exp, dim=1))
+    denom = torch.sum(exp, dim=1) + 1e-6
+    loss = -torch.log(exp[:, 0] / denom)
 
     loss = loss * ((weights * loss_weight) + 1)
-
     loss = torch.mean(loss)
     return loss
 
@@ -42,8 +42,8 @@ def eval_auc_loop(model, val_loader, weight=0):
 
     model.eval()
 
-    positives = torch.empty(0).to(DEVICE)
-    negatives = torch.empty(0).to(DEVICE)
+    positives = torch.empty(0)
+    negatives = torch.empty(0)
     val_losses = []
     for tracks in tqdm(val_loader):
 
@@ -77,18 +77,18 @@ def eval_auc_loop(model, val_loader, weight=0):
         # breakpoint()
         cos = nn.CosineSimilarity(dim=2, eps=1e-6)
 
-        possim = cos(out, posemb_out).squeeze(1)
+        possim = cos(out, posemb_out).squeeze(1).cpu().detach()
 
         out = out.repeat(1, negemb_out.shape[1], 1)
         negsim = cos(out, negemb_out)
 
         negsim = negsim.view(-1, negemb_out.shape[1])
-        negflat = negsim.flatten()
+        negflat = negsim.flatten().cpu().detach()
 
         positives = torch.cat((positives, possim))
         negatives = torch.cat((negatives, negflat))
-    np_pos = positives.cpu().detach().numpy()
-    np_neg = negatives.cpu().detach().numpy()
+    np_pos = positives.numpy()
+    np_neg = negatives.numpy()
     scores = np.concatenate((np_pos, np_neg))
     labels = [1] * len(np_pos) + [0] * len(np_neg)
     # fpr, tpr, thresholds = roc_curve(labels, scores)
@@ -131,7 +131,7 @@ def train_loop(model, train_loader, opt, weight, log=False, log_every=100):
         out = urs_x.unsqueeze(1)
 
         loss = weighted_contrastive_loss(
-            out, posemb_out, negemb_out, weights, weight, temp=temp
+            out, posemb_out, negemb_out, weights, weight, temp=temp,
         )
 
         if itr % log_every == 0 and log:
@@ -141,6 +141,9 @@ def train_loop(model, train_loader, opt, weight, log=False, log_every=100):
                 wandb.log({"loss": loss.item()})
 
         losses.append(loss.item())
+
+        # gradient clipping
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
         loss.backward()
         opt.step()
@@ -155,19 +158,20 @@ if __name__ == "__main__":
     LOAD = args["load"]
 
     default = {
-        "emb_size": 200,
-        "batch_size": 16,
+        "emb_size": 256,
+        "batch_size": 64,
         "neg_samples": 20,
-        "temp": 0.07,
+        "temp": 0.5,
         "learnable_temp": False,
         "multiplier": 10,
         "weight": 0,
-        "prj": "bn",
+        "prj": "linear",
+        "aggr": "gating",
         "nusers": 1000,
-        "prj_size": 512,
-        "drop": 0.35,
+        "prj_size": 768,
+        "drop": 0.25,
         "lr": 0.001,
-        "encoder": "ol3",
+        "encoder": "MERT",
     }
 
     if LOAD == "":
@@ -178,16 +182,11 @@ if __name__ == "__main__":
         print("[LOADER] Loading parameters from experiments set")
         experiments = [
             {
-                "temp": 0.15,
-                "learnable_temp": False,
-            },
-            {
-                "temp": 0.15,
+                "aggr": "gating",
                 "learnable_temp": True,
-                "weight": 0.5,
             },
             {
-                "temp": 1,
+                "aggr": "cross-attention",
                 "learnable_temp": True,
             },
         ]
@@ -200,7 +199,7 @@ if __name__ == "__main__":
     LOG_EVERY = 100
 
     EPOCHS = 1000
-    PAT = 6
+    PAT = 10
 
     if LOG:
         load_dotenv()
@@ -214,7 +213,7 @@ if __name__ == "__main__":
         print(f"[MAIN] Running experiment {exp_num+1} or {len(experiments)}")
 
         config = default.copy()
-        config = config | exp
+        config = {**config, **exp}
 
         BATCH_SIZE = config["batch_size"]
         EMB_SIZE = config["emb_size"]
@@ -224,6 +223,7 @@ if __name__ == "__main__":
         MUL = config["multiplier"]
         WEIGHT = config["weight"]
         PRJ = config["prj"]
+        AGGR = config["aggr"]
         DROP = config["drop"]
         LR = config["lr"]
         ENCODER = config["encoder"]
@@ -232,7 +232,7 @@ if __name__ == "__main__":
             membs_path = "usrembeds/data/embeddings/batched"
             MUSIC_EMB_SIZE = 512
         else:
-            membs_path = "usrembeds/data/embeddings/MERT_batched"
+            membs_path = "embeddings_full"
             MUSIC_EMB_SIZE = 768
 
         stats_path = "clean_stats.csv"
@@ -254,13 +254,13 @@ if __name__ == "__main__":
             batch_size=BATCH_SIZE,
             shuffle=True,
             # pin_memory=True,
-            num_workers=8,
+            # num_workers=8,
         )
         val_dataloader = torch.utils.data.DataLoader(
             val_dataset,
             batch_size=16,
             shuffle=True,
-            num_workers=8,
+            # num_workers=8,
         )
 
         model = Aligner(
@@ -268,6 +268,7 @@ if __name__ == "__main__":
             emb_size=EMB_SIZE,
             prj_size=MUSIC_EMB_SIZE,
             prj_type=PRJ,
+            aggragation=AGGR,
             lt=LT,
             temp=TEMP,
             drop=DROP,
@@ -281,7 +282,7 @@ if __name__ == "__main__":
             opt = optim.AdamW(model.parameters(), lr=LR)
 
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            opt, "min", factor=0.2, patience=PAT // 2
+            opt, "max", factor=0.2, patience=3
         )
 
         config = {
@@ -293,6 +294,7 @@ if __name__ == "__main__":
             "multiplier": MUL,
             "weight": WEIGHT,
             "prj": PRJ,
+            "aggr": AGGR,
             "nusers": NUSERS,
             "prj_size": MUSIC_EMB_SIZE,
             "embeddings": membs_path,
@@ -325,7 +327,7 @@ if __name__ == "__main__":
             losses = train_loop(model, train_dataloader, opt, WEIGHT, LOG, LOG_EVERY)
             roc_auc, pr_auc, val_losses = eval_auc_loop(model, val_dataloader, WEIGHT)
 
-            scheduler.step(np.mean(val_losses))
+            scheduler.step(roc_auc)
 
             if LOG:
                 wandb.log(
@@ -334,6 +336,7 @@ if __name__ == "__main__":
                         "val_loss": np.mean(val_losses),
                         "roc_auc": roc_auc,
                         "pr_auc": pr_auc,
+                        "lr": opt.param_groups[0]["lr"],
                     }
                 )
 
