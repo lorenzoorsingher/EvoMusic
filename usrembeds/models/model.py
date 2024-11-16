@@ -31,9 +31,13 @@ class Aligner(nn.Module):
             self.drop_gate = nn.Dropout(drop)
         elif aggragation == "cross-attention":
             # use attention to compute weights for each dimension of the music embeddings
-            self.gate = nn.MultiheadAttention(prj_size, 12, dropout=drop, batch_first=True)
+            self.input_gate_ln = nn.LayerNorm(prj_size)
+            self.gate = nn.MultiheadAttention(prj_size, 6, dropout=drop, batch_first=True)
         elif aggragation == "weighted":
             self.weights = nn.Parameter(torch.ones(13))
+        elif aggragation == "GRU":
+            self.input_gate_ln = nn.LayerNorm(prj_size)
+            self.gru = nn.GRU(prj_size, prj_size, 1, batch_first=True, dropout=drop)
         elif aggragation != "mean":
             raise ValueError(f"[MODEL] Invalid aggregation type: {aggragation}")
 
@@ -94,6 +98,7 @@ class Aligner(nn.Module):
             music_x = (weights * music_embs).sum(dim=2)
             music_x = self.drop_gate(music_x)
         elif self.aggragation == "cross-attention":
+            music_embs = self.input_gate_ln(music_embs)
             # use user embeddings as query and music embeddings as key and value
             # urs [batch, prj_size] -> [batch * NPOS+NNEG, 1, prj_size]
             # music [batch, NPOS+NNEG, 13, emb_size] -> [batch * NPOS+NNEG, 13, emb_size]
@@ -101,6 +106,12 @@ class Aligner(nn.Module):
             music_vals = music_embs.view(batch_size * N_EMB, 13, -1)
             music_x, weights = self.gate(user_queries, music_vals, music_vals)
             music_x = music_x.view(batch_size, N_EMB, -1)
+        elif self.aggragation == "GRU":
+            music_embs = self.input_gate_ln(music_embs)
+            music_gru_input = music_embs.view(batch_size * N_EMB, 13, -1)
+            music_x, _ = self.gru(music_gru_input)
+            music_x = music_x[:, -1, :].view(batch_size, N_EMB, -1)
+        
 
         if self.prj_type == "linear":
             music_x = F.gelu(self.fc3(music_x)) + music_x
