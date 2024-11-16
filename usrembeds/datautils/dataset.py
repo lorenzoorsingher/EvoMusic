@@ -12,7 +12,105 @@ from tqdm import tqdm
 from random import randint
 
 
-class ContrDataset(Dataset):
+class ContrDatasetMERT(Dataset):
+    def __init__(
+        self,
+        embs_dir,
+        stats_dir,
+        nneg=10,
+        multiplier=10,
+        transform=None,
+    ):
+        self.embs_dir = embs_dir
+        self.stats_dir = stats_dir
+        self.nneg = nneg
+        self.multiplier = multiplier
+        self.transform = transform
+
+        print("[DATASET] Loading all embeddings filepaths")
+        self.emb_keys = [
+            f.split(".")[0]
+            for f in os.listdir(embs_dir)
+            if os.path.isfile(os.path.join(embs_dir, f))
+        ]
+
+        # del self.allkeys["metadata"]
+        # mapping the keys to a list because dict lookup is just too slow
+        self.emb_map = {key: idx for idx, key in enumerate(self.emb_keys)}
+
+        print("[DATASET] Loading users stats")
+        # load the stats
+        self.stats = pd.read_csv(stats_dir)
+        self.stats["count"] = self.stats["count"].astype(int)
+
+        # remove tracks with no embeddings
+        self.stats = self.stats[self.stats["id"].isin(self.emb_keys)].reset_index(
+            drop=True
+        )
+
+        self.idx2usr = self.stats["userid"].unique().tolist()
+
+        # Group by 'userid' and aggregate 'id' into a list
+        # self.user2songs = self.stats.groupby("userid")["id"].apply(list).to_dict()
+
+        self.usersums = self.stats.groupby("userid")["count"].sum()
+        self.userstd = self.stats.groupby("userid")["count"].std()
+        self.usercount = self.stats.groupby("userid")["count"].count()
+
+        self.user2songs = (
+            self.stats.groupby("userid")
+            .apply(lambda x: list(zip(x["id"], x["count"])))
+            .to_dict()
+        )
+
+        # number of users
+        self.nusers = self.stats["userid"].nunique()
+
+        # breakpoint()
+
+    def __len__(self):
+        return self.nusers * self.multiplier
+
+    def __getitem__(self, idx):
+
+        idx = idx % self.nusers
+
+        usr = self.idx2usr[idx]
+
+        pos = self.user2songs[usr]
+
+        neg = list(set(self.emb_keys) - set(pos))
+
+        pos_sample = pos[randint(0, len(pos) - 1)]
+        posset, count = pos_sample
+
+        mean = self.usersums[usr] / self.usercount[usr]
+        top70 = mean + self.userstd[usr]
+        weight = min(1, count / top70)
+        # weight = torch.Tensor([weight])
+        # breakpoint()
+
+        negset = np.random.choice(neg, size=self.nneg, replace=False)
+
+        poslist = []
+
+        with open(os.path.join(self.embs_dir, f"{posset}.json"), "r") as f:
+            emb = json.load(f)[posset][0]
+            poslist = [emb]
+
+        neglist = []
+        for neg in negset:
+            with open(os.path.join(self.embs_dir, f"{neg}.json"), "r") as f:
+                emb = json.load(f)[neg][0]
+            neglist.append(emb)
+
+        posemb = torch.Tensor(poslist)
+        negemb = torch.Tensor(neglist)
+
+        return idx, posemb, negemb, weight
+
+
+class ContrDatasetOL3(Dataset):
     def __init__(
         self,
         embs_dir,
@@ -206,13 +304,37 @@ class MusicDataset(Dataset):
         return stat, snip
 
 
+# if __name__ == "__main__":
+
+#     embs_dir = "usrembeds/data/embeddings/embeddings_full"
+
+#     embedding_files = [
+#         f for f in os.listdir(embs_dir) if os.path.isfile(os.path.join(embs_dir, f))
+#     ]
+#     embedding_files.remove("allkeys.json")
+
+#     dest_folder = "usrembeds/data/embeddings/embeddings_full_split"
+
+#     for num, file in enumerate(tqdm(embedding_files[-1:])):
+#         with open(os.path.join(embs_dir, file), "r") as f1:
+#             data = json.load(f1)
+#             for key, value in tqdm(data.items()):
+#                 if key != "metadata":
+#                     if not os.path.exists(os.path.join(dest_folder, key)):
+#                         with open(os.path.join(dest_folder, f"{key}.json"), "w") as f2:
+#                             json.dump({key: value}, f2)
+#             del data
+#             del f1
+#             # breakpoint()
+
+#     breakpoint()
 if __name__ == "__main__":
 
     music_path = "../scraper/music"
-    membs_path = "usrembeds/data/embeddings/batched"
+    membs_path = "usrembeds/data/embeddings/embeddings_full_split"
     stats_path = "clean_stats.csv"
 
-    dataset = ContrDataset(membs_path, stats_path, transform=None)
+    dataset = ContrDatasetMERT(membs_path, stats_path, transform=None)
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=8,
