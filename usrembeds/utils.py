@@ -1,3 +1,4 @@
+import datetime
 import torch
 from datautils.dataset import MusicDataset
 from sklearn.manifold import TSNE
@@ -24,6 +25,12 @@ def plot_music_batch(emb, device):
 
     plt.title("t-SNE Embedding")
     plt.show()
+
+
+def gen_run_name(args=None):
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_name = f"run_{timestamp}"
+    return run_name
 
 
 def get_args():
@@ -148,5 +155,6 @@ def get_args():
         default=0.001,
     )
 
-    args = vars(parser.parse_args())
-    return args
+    args = parser.parse_args()
+    args_dict = vars(args)
+    return args, args_dict

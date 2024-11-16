@@ -12,9 +12,9 @@ from torch import optim
 from tqdm import tqdm
 from dotenv import load_dotenv
 
-from datautils.dataset import MusicDataset, ContrDataset
+from datautils.dataset import ContrDatasetMERT
 from models.model import Aligner
-from utils import get_args
+from utils import get_args, gen_run_name
 
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
@@ -102,7 +102,7 @@ def eval_auc_loop(model, val_loader, weight=0):
     return roc_auc, pr_auc, val_losses
 
 
-def train_loop(model, train_loader, opt, weight, log=False, log_every=100):
+def train_loop(model, train_loader, opt, weight, lt=False, log=False, log_every=100):
 
     model.train()
 
@@ -131,11 +131,16 @@ def train_loop(model, train_loader, opt, weight, log=False, log_every=100):
         out = urs_x.unsqueeze(1)
 
         loss = weighted_contrastive_loss(
-            out, posemb_out, negemb_out, weights, weight, temp=temp,
+            out,
+            posemb_out,
+            negemb_out,
+            weights,
+            weight,
+            temp=temp,
         )
 
         if itr % log_every == 0 and log:
-            if LT:
+            if lt:
                 wandb.log({"loss": loss.item(), "temp": temp.item()})
             else:
                 wandb.log({"loss": loss.item()})
@@ -153,9 +158,9 @@ def train_loop(model, train_loader, opt, weight, log=False, log_every=100):
 
 if __name__ == "__main__":
 
-    args = get_args()
+    args, args_dict = get_args()
 
-    LOAD = args["load"]
+    LOAD = args.load
 
     default = {
         "emb_size": 256,
@@ -176,7 +181,7 @@ if __name__ == "__main__":
 
     if LOAD == "":
         print("[LOADER] Loading parameters from command line")
-        experiments = [args]
+        experiments = [args_dict]
 
     elif LOAD == "exp":
         print("[LOADER] Loading parameters from experiments set")
@@ -195,7 +200,7 @@ if __name__ == "__main__":
         model_state, config, opt_state = Aligner.load_model(LOAD)
         experiments = [config]
 
-    LOG = not args["no_log"]
+    LOG = not args.no_log
     LOG_EVERY = 100
 
     EPOCHS = 1000
@@ -227,18 +232,13 @@ if __name__ == "__main__":
         DROP = config["drop"]
         LR = config["lr"]
         ENCODER = config["encoder"]
+        MUSIC_EMB_SIZE = config["prj_size"]
 
-        if ENCODER == "ol3":
-            membs_path = "usrembeds/data/embeddings/batched"
-            MUSIC_EMB_SIZE = 512
-        else:
-            membs_path = "embeddings_full"
-            MUSIC_EMB_SIZE = 768
-
+        membs_path = "usrembeds/data/embeddings/embeddings_full_split"
         stats_path = "clean_stats.csv"
         save_path = "usrembeds/checkpoints"
 
-        dataset = ContrDataset(
+        dataset = ContrDatasetMERT(
             membs_path,
             stats_path,
             nneg=NEG,
@@ -285,26 +285,7 @@ if __name__ == "__main__":
             opt, "max", factor=0.2, patience=3
         )
 
-        config = {
-            "emb_size": EMB_SIZE,
-            "batch_size": BATCH_SIZE,
-            "neg_samples": NEG,
-            "temp": TEMP,
-            "learnable_temp": LT,
-            "multiplier": MUL,
-            "weight": WEIGHT,
-            "prj": PRJ,
-            "aggr": AGGR,
-            "nusers": NUSERS,
-            "prj_size": MUSIC_EMB_SIZE,
-            "embeddings": membs_path,
-            "dropout": DROP,
-            "lr": LR,
-            "encoder": ENCODER,
-        }
-
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_name = f"run_{timestamp}"
+        run_name = gen_run_name()
         if LOG:
             wandb.init(
                 project="BIO",
@@ -324,7 +305,9 @@ if __name__ == "__main__":
 
             print(f"Epoch {epoch}")
 
-            losses = train_loop(model, train_dataloader, opt, WEIGHT, LOG, LOG_EVERY)
+            losses = train_loop(
+                model, train_dataloader, opt, WEIGHT, LT, LOG, LOG_EVERY
+            )
             roc_auc, pr_auc, val_losses = eval_auc_loop(model, val_dataloader, WEIGHT)
 
             scheduler.step(roc_auc)
