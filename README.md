@@ -8,8 +8,13 @@ If needed redefine the `__getitem__` method in the MusicDataset class to fit the
 
 # FROM MP3 TO COSSIM
 
-These steps are implemented in the `aligner.py` file, follow them to get from the mp3 file to the cosine similarity between the user embeddings and the music embeddings. User embeddings are stored in the model and correspond to the 1000 users in the Last.fm dataset (actually is a bit less than 1000 because not all users have listened to music avaiable to us).
+~~These steps are implemented in the `aligner.py` file, follow them to get from the mp3 file to the cosine similarity between the user embeddings and the music embeddings. User embeddings are stored in the model and correspond to the 1000 users in the Last.fm dataset (actually is a bit less than 1000 because not all users have listened to music avaiable to us).~~
 
+## WE HAVE NOW SWITCHED TO MERT
+
+Look at `test.py` for a quick example on how to load the alignment model
+
+<!---
 Load model and config from checkpoint
 
 ```python
@@ -99,3 +104,4 @@ urs_x, embs, _ = align_model(usr_idx, batched_emb)
 ```
 
 `N` is the number of songs for every batch, in this case we are only running one batch with one song
+--->
