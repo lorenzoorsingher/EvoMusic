@@ -18,24 +18,31 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
 if __name__ == "__main__":
 
     # load model and config from checkpoint
-    LOAD = "usrembeds/checkpoints/run_20241107_201542_best.pt"
+    LOAD = "usrembeds/checkpoints/run_20241112_181958_best.pt"
     model_state, config, _ = Aligner.load_model(LOAD)
 
     BATCH_SIZE = config["batch_size"]
     EMB_SIZE = config["emb_size"]
-    MUSIC_EMB_SIZE = config["prj_size"]
     NEG = config["neg_samples"]
     TEMP = config["temp"]
     LT = config["learnable_temp"]
     MUL = config["multiplier"]
     WEIGHT = config["weight"]
     PRJ = config["prj"]
+    # DROP = config["drop"]
+    LR = config["lr"]
+    ENCODER = config["encoder"]
 
-    membs_path = "usrembeds/data/embeddings/batched"
+    if ENCODER == "ol3":
+        membs_path = "usrembeds/data/embeddings/batched"
+        MUSIC_EMB_SIZE = 512
+    else:
+        membs_path = "usrembeds/data/embeddings/MERT_batched"
+        MUSIC_EMB_SIZE = 768
+
     stats_path = "clean_stats.csv"
     save_path = "usrembeds/checkpoints"
 
-    # load dataset and dataloader
     dataset = ContrDataset(
         membs_path,
         stats_path,
@@ -55,7 +62,6 @@ if __name__ == "__main__":
         num_workers=8,
     )
 
-    # load model
     model = Aligner(
         n_users=NUSERS,
         emb_size=EMB_SIZE,
@@ -63,6 +69,7 @@ if __name__ == "__main__":
         prj_type=PRJ,
         lt=LT,
         temp=TEMP,
+        # drop=DROP,
     ).to(DEVICE)
 
     model.load_state_dict(model_state)
@@ -115,21 +122,23 @@ if __name__ == "__main__":
         trues += comp.sum().item()
         numel += comp.numel()
 
-    # compute ROC AUC, PR AUC, and accuracy
-    np_pos = positives.cpu().detach().numpy()
-    np_neg = negatives.cpu().detach().numpy()
-    scores = np.concatenate((np_pos, np_neg))
-    labels = [1] * len(np_pos) + [0] * len(np_neg)
+    for skip in [1, 2, 5, 10, 20, 100]:
+        # compute ROC AUC, PR AUC, and accuracy
+        np_pos = positives.cpu().detach().numpy()
+        np_neg = negatives.cpu().detach().numpy()
+        np_neg = np_neg[::skip]
+        scores = np.concatenate((np_pos, np_neg))
+        labels = [1] * len(np_pos) + [0] * len(np_neg)
 
-    fpr, tpr, thresholds = roc_curve(labels, scores)
+        fpr, tpr, thresholds = roc_curve(labels, scores)
 
-    roc_auc = roc_auc_score(labels, scores)
+        roc_auc = roc_auc_score(labels, scores)
 
-    pr_auc = average_precision_score(labels, scores)
+        pr_auc = average_precision_score(labels, scores)
 
-    print(f"ROC AUC: {roc_auc}")
-    print(f"PR AUC: {pr_auc}")
-    print(f"Accuracy: {trues / numel}")
+        print(f"1/{skip} ROC AUC: {round(roc_auc,2)} PR AUC: {round(pr_auc,2)}")
+    # print(f"PR AUC: {pr_auc}")
+    # print(f"Accuracy: {trues / numel}")
 
     plt.plot(fpr, tpr, label="ROC Curve")
     plt.xlabel("False Positive Rate")
