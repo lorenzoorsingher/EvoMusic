@@ -121,7 +121,7 @@ def get_args():
         "--prj-size",
         type=int,
         help="Size of the latent space",
-        default=512,
+        default=768,
     )
 
     parser.add_argument(

@@ -174,3 +174,6 @@ cython_debug/
 
 # wandb
 wandb/
+
+# exceptions
+!usrembeds/data/splits.json

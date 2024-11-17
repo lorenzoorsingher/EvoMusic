@@ -16,43 +16,39 @@ class ContrDatasetMERT(Dataset):
     def __init__(
         self,
         embs_dir,
-        stats_dir,
+        stats_path,
+        split,
+        usrs,
         nneg=10,
         multiplier=10,
         transform=None,
     ):
         self.embs_dir = embs_dir
-        self.stats_dir = stats_dir
+        self.stats_path = stats_path
         self.nneg = nneg
         self.multiplier = multiplier
         self.transform = transform
 
-        print("[DATASET] Loading all embeddings filepaths")
-        self.emb_keys = [
-            f.split(".")[0]
-            for f in os.listdir(embs_dir)
-            if os.path.isfile(os.path.join(embs_dir, f))
-        ]
+        print("[DATASET] Creating dataset")
 
-        # del self.allkeys["metadata"]
-        # mapping the keys to a list because dict lookup is just too slow
-        self.emb_map = {key: idx for idx, key in enumerate(self.emb_keys)}
+        # set embedding keys from the split
+        self.emb_keys = split
 
-        print("[DATASET] Loading users stats")
         # load the stats
-        self.stats = pd.read_csv(stats_dir)
+        self.stats = pd.read_csv(stats_path)
         self.stats["count"] = self.stats["count"].astype(int)
 
-        # remove tracks with no embeddings
+        # remove entries with no embeddings
         self.stats = self.stats[self.stats["id"].isin(self.emb_keys)].reset_index(
             drop=True
         )
 
+        # remove users not in the split
+        self.stats = self.stats[self.stats["userid"].isin(usrs)]
+
         self.idx2usr = self.stats["userid"].unique().tolist()
 
-        # Group by 'userid' and aggregate 'id' into a list
-        # self.user2songs = self.stats.groupby("userid")["id"].apply(list).to_dict()
-
+        # compute user stats
         self.usersums = self.stats.groupby("userid")["count"].sum()
         self.userstd = self.stats.groupby("userid")["count"].std()
         self.usercount = self.stats.groupby("userid")["count"].count()
@@ -65,8 +61,6 @@ class ContrDatasetMERT(Dataset):
 
         # number of users
         self.nusers = self.stats["userid"].nunique()
-
-        # breakpoint()
 
     def __len__(self):
         return self.nusers * self.multiplier
@@ -81,19 +75,21 @@ class ContrDatasetMERT(Dataset):
 
         neg = list(set(self.emb_keys) - set(pos))
 
+        # take random positive sample
         pos_sample = pos[randint(0, len(pos) - 1)]
         posset, count = pos_sample
 
+        # compute pos sample weight
         mean = self.usersums[usr] / self.usercount[usr]
         top70 = mean + self.userstd[usr]
         weight = min(1, count / top70)
-        # weight = torch.Tensor([weight])
-        # breakpoint()
 
+        # take random negative samples
         negset = np.random.choice(neg, size=self.nneg, replace=False)
 
         poslist = []
 
+        # load the embeddings
         with open(os.path.join(self.embs_dir, f"{posset}.json"), "r") as f:
             emb = json.load(f)[posset][0]
             poslist = [emb]
@@ -114,13 +110,13 @@ class ContrDatasetOL3(Dataset):
     def __init__(
         self,
         embs_dir,
-        stats_dir,
+        stats_path,
         nneg=10,
         multiplier=10,
         transform=None,
     ):
         self.embs_dir = embs_dir
-        self.stats_dir = stats_dir
+        self.stats_path = stats_path
         self.nneg = nneg
         self.multiplier = multiplier
         self.transform = transform
@@ -155,7 +151,7 @@ class ContrDatasetOL3(Dataset):
 
         print("[DATASET] Loading users stats")
         # load the stats
-        self.stats = pd.read_csv(stats_dir)
+        self.stats = pd.read_csv(stats_path)
         self.stats["count"] = self.stats["count"].astype(int)
 
         # remove tracks with no embeddings
@@ -304,44 +300,101 @@ class MusicDataset(Dataset):
         return stat, snip
 
 
-# if __name__ == "__main__":
+def get_dataloaders(
+    embs_path,
+    stats_path,
+    splits_path,
+    nneg,
+    mul,
+    batch_size,
+    workers=8,
+):
 
-#     embs_dir = "usrembeds/data/embeddings/embeddings_full"
+    with open(splits_path, "r") as f:
+        splits = json.load(f)
 
-#     embedding_files = [
-#         f for f in os.listdir(embs_dir) if os.path.isfile(os.path.join(embs_dir, f))
-#     ]
-#     embedding_files.remove("allkeys.json")
+    train = splits["train"]
+    test = splits["test"]
+    users = splits["users"]
 
-#     dest_folder = "usrembeds/data/embeddings/embeddings_full_split"
+    train_dataset = ContrDatasetMERT(
+        embs_path,
+        stats_path,
+        split=train,
+        usrs=users,
+        nneg=nneg,
+        multiplier=mul,
+    )
 
-#     for num, file in enumerate(tqdm(embedding_files[-1:])):
-#         with open(os.path.join(embs_dir, file), "r") as f1:
-#             data = json.load(f1)
-#             for key, value in tqdm(data.items()):
-#                 if key != "metadata":
-#                     if not os.path.exists(os.path.join(dest_folder, key)):
-#                         with open(os.path.join(dest_folder, f"{key}.json"), "w") as f2:
-#                             json.dump({key: value}, f2)
-#             del data
-#             del f1
-#             # breakpoint()
+    test_dataset = ContrDatasetMERT(
+        embs_path,
+        stats_path,
+        split=test,
+        usrs=users,
+        nneg=nneg,
+        multiplier=mul,
+    )
 
-#     breakpoint()
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=workers,
+    )
+
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=workers,
+    )
+
+    return train_loader, test_loader, len(users)
+
+
 if __name__ == "__main__":
 
     music_path = "../scraper/music"
     membs_path = "usrembeds/data/embeddings/embeddings_full_split"
     stats_path = "clean_stats.csv"
+    splits_path = "usrembeds/data/splits.json"
 
-    dataset = ContrDatasetMERT(membs_path, stats_path, transform=None)
-    dataloader = torch.utils.data.DataLoader(
-        dataset,
+    with open(splits_path, "r") as f:
+        splits = json.load(f)
+
+    train = splits["train"]
+    test = splits["test"]
+    users = splits["users"]
+
+    train_dataset = ContrDatasetMERT(
+        membs_path,
+        stats_path,
+        split=train,
+        usrs=users,
+    )
+
+    test_dataset = ContrDatasetMERT(
+        membs_path,
+        stats_path,
+        split=test,
+        usrs=users,
+    )
+
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
         batch_size=8,
         shuffle=True,
         num_workers=8,
     )
 
-    for track in tqdm(dataloader):
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset,
+        batch_size=8,
+        shuffle=True,
+        num_workers=8,
+    )
+
+    breakpoint()
+    for track in tqdm(train_loader):
         idx, posemb, negemb, weights = track
-        breakpoint()
+        # breakpoint()

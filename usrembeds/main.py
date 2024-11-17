@@ -12,7 +12,7 @@ from torch import optim
 from tqdm import tqdm
 from dotenv import load_dotenv
 
-from datautils.dataset import ContrDatasetMERT
+from datautils.dataset import ContrDatasetMERT, get_dataloaders
 from models.model import Aligner
 from utils import get_args, gen_run_name
 
@@ -113,7 +113,6 @@ def train_loop(model, train_loader, opt, weight, lt=False, log=False, log_every=
         # [B, 1, EMB]
         # [B, NNEG, EMB]
         idx, posemb, negemb, weights = tracks
-
         idx = idx.to(DEVICE)
         posemb = posemb.to(DEVICE)
         negemb = negemb.to(DEVICE)
@@ -234,33 +233,18 @@ if __name__ == "__main__":
         ENCODER = config["encoder"]
         MUSIC_EMB_SIZE = config["prj_size"]
 
-        membs_path = "usrembeds/data/embeddings/embeddings_full_split"
+        embs_path = "usrembeds/data/embeddings/embeddings_full_split"
         stats_path = "clean_stats.csv"
+        splits_path = "usrembeds/data/splits.json"
         save_path = "usrembeds/checkpoints"
 
-        dataset = ContrDatasetMERT(
-            membs_path,
+        train_dataloader, val_dataloader, NUSERS = get_dataloaders(
+            embs_path,
             stats_path,
-            nneg=NEG,
-            multiplier=MUL,
-            transform=None,
-        )
-
-        train_dataset, val_dataset = torch.utils.data.random_split(dataset, [0.8, 0.2])
-
-        NUSERS = dataset.nusers
-        train_dataloader = torch.utils.data.DataLoader(
-            train_dataset,
-            batch_size=BATCH_SIZE,
-            shuffle=True,
-            # pin_memory=True,
-            # num_workers=8,
-        )
-        val_dataloader = torch.utils.data.DataLoader(
-            val_dataset,
-            batch_size=16,
-            shuffle=True,
-            # num_workers=8,
+            splits_path,
+            NEG,
+            MUL,
+            BATCH_SIZE,
         )
 
         model = Aligner(
