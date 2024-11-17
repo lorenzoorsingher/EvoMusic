@@ -356,7 +356,7 @@ if __name__ == "__main__":
 
     music_path = "../scraper/music"
     membs_path = "usrembeds/data/embeddings/embeddings_full_split"
-    stats_path = "clean_stats.csv"
+    stats_path = "usrembeds/data/clean_stats.csv"
     splits_path = "usrembeds/data/splits.json"
 
     with open(splits_path, "r") as f:

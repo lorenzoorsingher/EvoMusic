@@ -234,7 +234,7 @@ if __name__ == "__main__":
         MUSIC_EMB_SIZE = config["prj_size"]
 
         embs_path = "usrembeds/data/embeddings/embeddings_full_split"
-        stats_path = "clean_stats.csv"
+        stats_path = "usrembeds/data/clean_stats.csv"
         splits_path = "usrembeds/data/splits.json"
         save_path = "usrembeds/checkpoints"
 
