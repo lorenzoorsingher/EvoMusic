@@ -1,0 +1,12 @@
+[
+  {
+    "aggr": "GRU",
+    "dropout": 0.25,
+    "encoder": "MERT",
+    "learnable_temp": true,
+    "multiplier": 10,
+    "neg_samples": 20,
+    "prj": "linear",
+    "temp": 0.5
+  }
+]
