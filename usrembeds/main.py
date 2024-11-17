@@ -1,3 +1,4 @@
+import json
 import torch
 import os
 import wandb
@@ -13,11 +14,12 @@ from tqdm import tqdm
 from dotenv import load_dotenv
 
 from datautils.dataset import ContrDatasetMERT, get_dataloaders
-from models.model import Aligner
+from models.model import Aligner, AlignerV2
 from utils import get_args, gen_run_name
 
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
+print(f"Using {DEVICE}")
 
 
 def weighted_contrastive_loss(out, posemb, negemb, weights, loss_weight, temp=0.07):
@@ -176,6 +178,8 @@ if __name__ == "__main__":
         "drop": 0.25,
         "lr": 0.001,
         "encoder": "MERT",
+        "pat": 10,
+        "model": "AlignerV2",
     }
 
     if LOAD == "":
@@ -187,23 +191,32 @@ if __name__ == "__main__":
         experiments = [
             {
                 "aggr": "gating",
+                "dropout": 0.25,
+                "encoder": "MERT",
                 "learnable_temp": True,
-            },
-            {
-                "aggr": "cross-attention",
-                "learnable_temp": True,
-            },
+                "multiplier": 10,
+                "neg_samples": 20,
+                "prj": "linear",
+                "temp": 0.5,
+            }
         ]
     else:
-        print("[LOADER] Loading parameters from checkpoint")
-        model_state, config, opt_state = Aligner.load_model(LOAD)
-        experiments = [config]
+
+        if LOAD.split(".")[-1] == "json":
+            print("[LOADER] Loading parameters from json file")
+            experiments = json.load(open(LOAD, "r"))
+        elif LOAD.split(".")[-1] == "pt":
+            print("[LOADER] Loading parameters from checkpoint")
+            model_state, config, opt_state = Aligner.load_model(LOAD)
+            experiments = [config]
+        else:
+            print("[LOADER] Error loading parameters, unknown file type")
+            exit()
 
     LOG = not args.no_log
     LOG_EVERY = 100
 
     EPOCHS = 1000
-    PAT = 10
 
     if LOG:
         load_dotenv()
@@ -232,6 +245,7 @@ if __name__ == "__main__":
         LR = config["lr"]
         ENCODER = config["encoder"]
         MUSIC_EMB_SIZE = config["prj_size"]
+        PAT = config["pat"]
 
         embs_path = "usrembeds/data/embeddings/embeddings_full_split"
         stats_path = "usrembeds/data/clean_stats.csv"
@@ -246,8 +260,14 @@ if __name__ == "__main__":
             MUL,
             BATCH_SIZE,
         )
+        config["nusers"] = NUSERS
 
-        model = Aligner(
+        if config["model"] == "Aligner":
+            model_class = Aligner
+        elif config["model"] == "AlignerV2":
+            model_class = AlignerV2
+
+        model = model_class(
             n_users=NUSERS,
             emb_size=EMB_SIZE,
             prj_size=MUSIC_EMB_SIZE,
@@ -258,7 +278,7 @@ if __name__ == "__main__":
             drop=DROP,
         ).to(DEVICE)
 
-        if LOAD != "" and LOAD != "exp":
+        if LOAD.split(".")[-1] == "pt":
             model.load_state_dict(model_state)
             opt = optim.AdamW(model.parameters(), lr=LR)
             opt.load_state_dict(opt_state)

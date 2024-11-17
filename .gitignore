@@ -178,3 +178,4 @@ wandb/
 # exceptions
 !usrembeds/data/splits.json
 !usrembeds/data/clean_stats.csv
+!usrembeds/exp/*
