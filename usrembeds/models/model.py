@@ -186,6 +186,7 @@ class Aligner(nn.Module):
         usr_x = self.dropmid(usr_x)
         usr_x = self.fc2(usr_x)
 
+        music_embs = music_embs.mean(dim=2)
         if self.prj_type == "linear":
             music_x = self.ln2(music_embs)
             music_x = F.gelu(self.fc3(music_x))
