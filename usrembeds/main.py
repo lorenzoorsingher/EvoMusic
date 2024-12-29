@@ -16,10 +16,12 @@ from dotenv import load_dotenv
 from datautils.dataset import ContrDatasetMERT, get_dataloaders
 from models.model import Aligner, AlignerV2
 from utils import get_args, gen_run_name
+# clip gradient
+from torch.nn.utils import clip_grad_norm_
 
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
-print(f"Using {DEVICE}")
+# print(f"Using {DEVICE}")
 
 
 def weighted_contrastive_loss(out, posemb, negemb, weights, loss_weight, temp=0.07):
@@ -30,7 +32,7 @@ def weighted_contrastive_loss(out, posemb, negemb, weights, loss_weight, temp=0.
     negsim = cos(out, negemb)
 
     # breakpoint()
-    logits = torch.cat((possim, negsim), dim=1) / temp
+    logits = torch.cat((possim, negsim), dim=1) * torch.exp(temp)
     exp = torch.exp(logits)
     denom = torch.sum(exp, dim=1) + 1e-6
     loss = -torch.log(exp[:, 0] / denom)
@@ -104,7 +106,7 @@ def eval_auc_loop(model, val_loader, weight=0):
     return roc_auc, pr_auc, val_losses
 
 
-def train_loop(model, train_loader, opt, weight, lt=False, log=False, log_every=100):
+def train_loop(model, train_loader, opt, grads, weight, lt=False, log=False, log_every=100):
 
     model.train()
 
@@ -148,13 +150,13 @@ def train_loop(model, train_loader, opt, weight, lt=False, log=False, log_every=
 
         losses.append(loss.item())
 
-        # gradient clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-
         loss.backward()
+        # gradient clipping
+        clip_grad_norm_(model.parameters(), 5)
+
         opt.step()
         # print(temp.item())
-    return losses
+    return losses, grads
 
 
 if __name__ == "__main__":
@@ -165,17 +167,19 @@ if __name__ == "__main__":
 
     default = {
         "emb_size": 256,
-        "batch_size": 64,
+        "batch_size": 256,
         "neg_samples": 20,
-        "temp": 0.5,
-        "learnable_temp": False,
-        "multiplier": 10,
+        "temp": 0.2,
+        "learnable_temp": True,
+        "multiplier": 15,
         "weight": 0,
-        "prj": "linear",
-        "aggr": "gating",
+        "prj": "shared",
+        "aggr": "weighted",
         "nusers": 1000,
         "prj_size": 768,
-        "drop": 0.25,
+        "hidden_size": 2048,
+        "drop": 0.2,
+        "noise_level": 0.01,
         "lr": 0.001,
         "encoder": "MERT",
         "pat": 10,
@@ -190,15 +194,21 @@ if __name__ == "__main__":
         print("[LOADER] Loading parameters from experiments set")
         experiments = [
             {
-                "aggr": "gating",
-                "dropout": 0.25,
-                "encoder": "MERT",
-                "learnable_temp": True,
-                "multiplier": 10,
-                "neg_samples": 20,
-                "prj": "linear",
-                "temp": 0.5,
-            }
+                "aggr": "self-cross-attention",
+                "prj": "shared+linear",
+            },
+            {
+                "aggr": "GRU",
+                "prj": "shared+linear",
+            },
+            {
+                "aggr": "learned_query",
+                "prj": "shared+linear",
+            },
+            {
+                "aggr": "gating-tanh",
+                "prj": "shared+linear",
+            },
         ]
     else:
 
@@ -245,6 +255,7 @@ if __name__ == "__main__":
         LR = config["lr"]
         ENCODER = config["encoder"]
         MUSIC_EMB_SIZE = config["prj_size"]
+        HID_SIZE = config["hidden_size"]
         PAT = config["pat"]
 
         embs_path = "usrembeds/data/embeddings/embeddings_full_split"
@@ -276,6 +287,7 @@ if __name__ == "__main__":
             lt=LT,
             temp=TEMP,
             drop=DROP,
+            hidden_size=HID_SIZE,
         ).to(DEVICE)
 
         if LOAD.split(".")[-1] == "pt":
@@ -286,10 +298,29 @@ if __name__ == "__main__":
             opt = optim.AdamW(model.parameters(), lr=LR)
 
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            opt, "max", factor=0.2, patience=3
+            opt, "max", factor=0.2, patience=PAT//2, verbose=True
         )
 
-        run_name = gen_run_name()
+        config = {
+            "emb_size": EMB_SIZE,
+            "batch_size": BATCH_SIZE,
+            "neg_samples": NEG,
+            "temp": TEMP,
+            "learnable_temp": LT,
+            "multiplier": MUL,
+            "weight": WEIGHT,
+            "prj": PRJ,
+            "aggr": AGGR,
+            "nusers": NUSERS,
+            "prj_size": MUSIC_EMB_SIZE,
+            "embeddings": embs_path,
+            "dropout": DROP,
+            "lr": LR,
+            "encoder": ENCODER,
+        }
+
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_name = f"run_{timestamp}"
         if LOG:
             wandb.init(
                 project="BIO",
@@ -305,12 +336,13 @@ if __name__ == "__main__":
         best_auc = 0
         pat = PAT
 
+        grads = None
         for epoch in range(EPOCHS):
 
             print(f"Epoch {epoch}")
 
-            losses = train_loop(
-                model, train_dataloader, opt, WEIGHT, LT, LOG, LOG_EVERY
+            losses, grads = train_loop(
+                model, train_dataloader, opt, grads, WEIGHT, LT, LOG, LOG_EVERY
             )
             roc_auc, pr_auc, val_losses = eval_auc_loop(model, val_dataloader, WEIGHT)
 

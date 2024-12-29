@@ -11,8 +11,12 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 from random import randint
 
+import concurrent.futures  # Added for multi-threading
 
 class ContrDatasetMERT(Dataset):
+    # static embeddings variable to store the embeddings
+    embeddings = {}
+    
     def __init__(
         self,
         embs_dir,
@@ -22,33 +26,37 @@ class ContrDatasetMERT(Dataset):
         nneg=10,
         multiplier=10,
         transform=None,
+        preload=False,  # New parameter for preloading
+        max_workers=12,   # Number of threads for preloading
     ):
         self.embs_dir = embs_dir
         self.stats_path = stats_path
         self.nneg = nneg
         self.multiplier = multiplier
         self.transform = transform
+        self.preload = preload  # Store the preload flag
+        self.max_workers = max_workers  # Number of threads
 
         print("[DATASET] Creating dataset")
 
-        # set embedding keys from the split
+        # Set embedding keys from the split
         self.emb_keys = split
 
-        # load the stats
+        # Load the stats
         self.stats = pd.read_csv(stats_path)
         self.stats["count"] = self.stats["count"].astype(int)
 
-        # remove entries with no embeddings
+        # Remove entries with no embeddings
         self.stats = self.stats[self.stats["id"].isin(self.emb_keys)].reset_index(
             drop=True
         )
 
-        # remove users not in the split
+        # Remove users not in the split
         self.stats = self.stats[self.stats["userid"].isin(usrs)]
 
         self.idx2usr = self.stats["userid"].unique().tolist()
 
-        # compute user stats
+        # Compute user stats
         self.usersums = self.stats.groupby("userid")["count"].sum()
         self.userstd = self.stats.groupby("userid")["count"].std()
         self.usercount = self.stats.groupby("userid")["count"].count()
@@ -59,8 +67,54 @@ class ContrDatasetMERT(Dataset):
             .to_dict()
         )
 
-        # number of users
+        # Number of users
         self.nusers = self.stats["userid"].nunique()
+
+        # Preload embeddings into memory if preload=True
+        if self.preload:
+            print("[DATASET] Preloading embeddings into RAM using multi-threading")
+            self._preload_embeddings()
+
+    def _load_embedding(self, key):
+        """
+        Helper function to load a single embedding JSON file.
+        Returns a tuple of (key, embedding) or (key, None) if not found.
+        """
+        if key in ContrDatasetMERT.embeddings: return None  # Skip if already loaded
+        emb_file = os.path.join(self.embs_dir, f"{key}.json")
+        if os.path.isfile(emb_file):
+            try:
+                with open(emb_file, "r") as f:
+                    data = json.load(f)
+                    if key in data:
+                        return key, data[key][0]
+                    else:
+                        print(f"[WARNING] Key '{key}' not found in {emb_file}")
+                        return key, None
+            except json.JSONDecodeError:
+                print(f"[ERROR] Failed to decode JSON from {emb_file}")
+                return key, None
+        else:
+            print(f"[WARNING] Embedding file '{emb_file}' does not exist")
+            return key, None
+
+    def _preload_embeddings(self):
+        """
+        Preloads all embeddings into the self.embeddings dictionary using multi-threading.
+        """
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Use list to eagerly evaluate and use tqdm for progress bar
+            results = list(tqdm(
+                executor.map(self._load_embedding, self.emb_keys),
+                total=len(self.emb_keys),
+                desc="Preloading embeddings"
+            ))
+
+        # Populate the embeddings dictionary
+        for key, emb in results:
+            if emb is not None:
+                ContrDatasetMERT.embeddings[key] = emb
+        print(f"[DATASET] Preloaded {len(ContrDatasetMERT.embeddings)} embeddings out of {len(self.emb_keys)}")
 
     def __len__(self):
         return self.nusers * self.multiplier
@@ -73,32 +127,67 @@ class ContrDatasetMERT(Dataset):
 
         pos = self.user2songs[usr]
 
-        neg = list(set(self.emb_keys) - set(pos))
+        neg = list(set(self.emb_keys) - set([song for song, _ in pos]))
 
-        # take random positive sample
+        # Take random positive sample
         pos_sample = pos[randint(0, len(pos) - 1)]
         posset, count = pos_sample
 
-        # compute pos sample weight
+        # Compute pos sample weight
         mean = self.usersums[usr] / self.usercount[usr]
         top70 = mean + self.userstd[usr]
         weight = min(1, count / top70)
 
-        # take random negative samples
+        # Take random negative samples
         negset = np.random.choice(neg, size=self.nneg, replace=False)
 
         poslist = []
 
-        # load the embeddings
-        with open(os.path.join(self.embs_dir, f"{posset}.json"), "r") as f:
-            emb = json.load(f)[posset][0]
-            poslist = [emb]
+        if self.preload:
+            # Use preloaded embeddings
+            poslist = [ContrDatasetMERT.embeddings[posset]]
+        else:
+            # Load the embeddings from disk
+            emb_file = os.path.join(self.embs_dir, f"{posset}.json")
+            if os.path.isfile(emb_file):
+                try:
+                    with open(emb_file, "r") as f:
+                        data = json.load(f)
+                        if posset in data:
+                            poslist = [data[posset][0]]
+                        else:
+                            print(f"[WARNING] Key '{posset}' not found in {emb_file}")
+                            poslist = [[0.0]]  # Placeholder
+                except json.JSONDecodeError:
+                    print(f"[ERROR] Failed to decode JSON from {emb_file}")
+                    poslist = [[0.0]]  # Placeholder
+            else:
+                print(f"[WARNING] Embedding file '{emb_file}' does not exist")
+                poslist = [[0.0]]  # Placeholder
 
         neglist = []
         for neg in negset:
-            with open(os.path.join(self.embs_dir, f"{neg}.json"), "r") as f:
-                emb = json.load(f)[neg][0]
-            neglist.append(emb)
+            if self.preload:
+                neg_emb = ContrDatasetMERT.embeddings[neg]
+                neglist.append(neg_emb)
+            else:
+                emb_file = os.path.join(self.embs_dir, f"{neg}.json")
+                if os.path.isfile(emb_file):
+                    try:
+                        with open(emb_file, "r") as f:
+                            data = json.load(f)
+                            if neg in data:
+                                neg_emb = data[neg][0]
+                            else:
+                                print(f"[WARNING] Key '{neg}' not found in {emb_file}")
+                                neg_emb = [0.0]  # Placeholder
+                    except json.JSONDecodeError:
+                        print(f"[ERROR] Failed to decode JSON from {emb_file}")
+                        neg_emb = [0.0]  # Placeholder
+                else:
+                    print(f"[WARNING] Embedding file '{emb_file}' does not exist")
+                    neg_emb = [0.0]  # Placeholder
+                neglist.append(neg_emb)
 
         posemb = torch.Tensor(poslist)
         negemb = torch.Tensor(neglist)
