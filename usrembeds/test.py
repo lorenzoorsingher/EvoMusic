@@ -23,21 +23,19 @@ if __name__ == "__main__":
     LOAD = "usrembeds/checkpoints/run_20241227_151619_best.pt"
     model_state, setup, _ = AlignerV2.load_model(LOAD)
 
-
-
     default = {
         "emb_size": 256,
         "batch_size": 64,
         "neg_samples": 20,
-        "temp": 0.5,
-        "learnable_temp": False,
+        "temp": 0.2,
+        "learnable_temp": True,
         "multiplier": 10,
         "weight": 0,
-        "prj": "linear",
-        "aggr": "gating",
-        "nusers": 1000,
+        "prj": "shared",
+        "aggr": "gating-tanh",
+        "nusers": 967,
         "prj_size": 768,
-        "drop": 0.25,
+        "drop": 0.2,
         "lr": 0.001,
         "encoder": "MERT",
     }
