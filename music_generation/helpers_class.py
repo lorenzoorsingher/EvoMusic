@@ -20,13 +20,27 @@ def dummy_safety_checker(images, **kwargs):
 
 
 class EasyDiffuse:
-    def __init__(self):
+    def __init__(
+        self, input_type="text", output_dir="generated_audio", exp_name="test"
+    ):
         super().__init__()
+        self.input_type = input_type
+        self.output_dir = output_dir
+        self.exp_name = exp_name
 
-    def text_to_embed(self, text):
+    def text_to_embed(self, inputs):
         raise NotImplementedError
 
     def token_embedding_to_embed(self, token_embedding):
+        raise NotImplementedError
+
+    def text_to_embeddings_before_encoder(self, inputs):
+        raise NotImplementedError
+
+    def generate_music(self, embeddings, generator, **kwargs):
+        raise NotImplementedError
+
+    def transform_inputs(self, inputs):
         raise NotImplementedError
 
 
@@ -63,26 +77,67 @@ class EasyRiffPipeline(EasyDiffuse):
 
 
 class MusicGenPipeline(EasyDiffuse):
-    def __init__(self):
-        super().__init__()
+    def __init__(
+        self, input_type="text", output_dir="generated_audio", exp_name="test"
+    ):
+        super().__init__(input_type, output_dir=output_dir, exp_name=exp_name)
         self.processor = AutoProcessor.from_pretrained(MUSICGEN_MODEL_ID)
         self.model = MusicgenForConditionalGeneration.from_pretrained(MUSICGEN_MODEL_ID)
 
     def text_to_embed(self, text, max_length=None):
         if max_length is None:
-            max_length = self.model.tokenizer.model_max_length
-        inputs = self.model.tokenizer(text, padding="max_length", max_length=max_length, truncation=True,
-                                      return_tensors="pt")
+            max_length = self.processor.tokenizer.model_max_length
+        inputs = self.processor(
+            text=[text],
+            padding=True,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_length,
+        )
         with torch.no_grad():
             return self.model.get_encoder()(**inputs).last_hidden_state
 
-    def token_embedding_to_embed(self, **token_embedding):
+    def token_embedding_to_embed(self, token_embedding):
         with torch.no_grad():
             return self.model.text_encoder.encoder(**token_embedding)
 
-    def text_to_embeddings_before_encoder(self, input_ids, **kwargs):
+    def text_to_embeddings_before_encoder(self, inputs, max_length=None):
+        inputs = self.processor(
+            text=[text],
+            padding=True,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_length,
+        )
+
         with torch.no_grad():
-            return self.model.get_input_embeddings()(input_ids)
+            return self.model.get_input_embeddings()(inputs["input_ids"])
+
+    def transform_inputs(self, inputs):
+        if self.input_type == "text":
+            return self.text_to_embed(inputs)
+        elif self.input_type == "token_embeddings":
+            inputs = {"inputs_embeds": inputs}
+            return self.token_embedding_to_embed(inputs).last_hidden_state
+        elif self.input_type == "embeds":
+            return inputs
+        else:
+            raise ValueError(
+                "input_type must be either 'text', 'token_embedding', or 'embeds'"
+            )
+
+    def generate_music(self, inputs, generator, **kwargs):
+        embeddings = self.transform_inputs(inputs)
+        audio_filename = (
+            f"{self.exp_name + '_' + str(len(os.listdir(self.output_dir)))}.wav"
+        )
+        audio_path = os.path.join(self.output_dir, audio_filename)
+        audio_values = self.model.generate(inputs_embeds=embeddings, **kwargs)
+        sampling_rate = musicgen_pipe.model.config.audio_encoder.sampling_rate
+        scipy.io.wavfile.write(
+            audio_path, rate=sampling_rate, data=audio_values[0, 0].numpy()
+        )
+        return audio_path
 
 
 if __name__ == "__main__":
@@ -91,23 +146,31 @@ if __name__ == "__main__":
     os.makedirs(output_dir, exist_ok=True)
     name = "musicgen_out" if TEST == "musicgen" else "riffusion_out"
     if name is None:
-        audio_filename = f"generated_music_{torch.randint(0, int(1e6), (1,)).item()}.wav"
+        audio_filename = (
+            f"generated_music_{torch.randint(0, int(1e6), (1,)).item()}.wav"
+        )
     else:
         audio_filename = f"{name + '_' + str(len(os.listdir(output_dir)))}.wav"
 
     audio_path = os.path.join(output_dir, audio_filename)
+    enable_full_determinism()
+    generator = torch.Generator(device=DEVICE)
 
     if TEST == "riffusion":
-        enable_full_determinism()
-        generator = torch.Generator(device=DEVICE)
         width = math.ceil(3 * (512 / 5))
         width = width + (8 - width % 8) if width % 8 != 0 else width
         generator.manual_seed(0)
         riffusion_pipe = EasyRiffPipeline()
         embedding = riffusion_pipe.text_to_embed(
             "Create a retro 80s synthwave track with nostalgic synthesizers, a steady electronic beat, and atmospheric reverb. Imagine a neon-lit night drive.",
-            30)
-        output = riffusion_pipe(prompt_embeds=embedding, num_inference_steps=50, width=width, generator=generator)
+            30,
+        )
+        output = riffusion_pipe(
+            prompt_embeds=embedding,
+            num_inference_steps=50,
+            width=width,
+            generator=generator,
+        )
         image = output.images[0]
         # Test embeddings pre-clip
         # embedding_pre = riffusion_pipe.text_to_embeddings_before_clip("Create a retro 80s synthwave track with nostalgic synthesizers, a steady electronic beat, and atmospheric reverb. Imagine a neon-lit night drive.", 30)
@@ -118,24 +181,29 @@ if __name__ == "__main__":
         # Convert spectrogram image back to audio
         params = SpectrogramParams()
         converter = SpectrogramImageConverter(params=params)
-        segment = converter.audio_from_spectrogram_image(image, apply_filters=True, )
+        segment = converter.audio_from_spectrogram_image(image, apply_filters=True)
         segment.export(audio_path, format="wav")
     elif TEST == "musicgen":
-        musicgen_pipe = MusicGenPipeline()
+        text = "Create a retro 80s synthwave track with nostalgic synthesizers, a steady electronic beat, and atmospheric reverb. Imagine a neon-lit night drive."
 
-        inputs_gen = musicgen_pipe.processor(
-            text=[
-                "Create a retro 80s synthwave track with nostalgic synthesizers, a steady electronic beat, and atmospheric reverb. Imagine a neon-lit night drive."],
-            padding=True,
-            return_tensors="pt",
+        # ---------------- Test with text directly ----------------
+        musicgen_pipe = MusicGenPipeline("text", output_dir, "musicgen_text")
+        path = musicgen_pipe.generate_music(text, generator, max_new_tokens=256)
+
+        # ---------------- Test with embeds directly ----------------
+        inputs_gen = musicgen_pipe.text_to_embed(text, max_length=256)
+        musicgen_pipe = MusicGenPipeline("embeds", output_dir, "embed")
+        path = musicgen_pipe.generate_music(inputs_gen, generator, max_new_tokens=256)
+        # ---------------- Test with pre T5 ----------------
+        inputs_gen = musicgen_pipe.text_to_embeddings_before_encoder(
+            text, max_length=256
         )
-        x = musicgen_pipe.text_to_embeddings_before_encoder(**inputs_gen)
-        x = {"inputs_embeds": x,
-             "attention_mask": inputs_gen["attention_mask"]}  # Not sure to let attention mask as is or to remove it
 
-        audio_values = musicgen_pipe.model.generate(inputs_embeds=x, max_new_tokens=256)
-        sampling_rate = musicgen_pipe.model.config.audio_encoder.sampling_rate
-        scipy.io.wavfile.write(audio_path, rate=sampling_rate, data=audio_values[0, 0].numpy())
+        musicgen_pipe = MusicGenPipeline(
+            "token_embeddings", output_dir, "token_embeddings"
+        )
+        path = musicgen_pipe.generate_music(inputs_gen, generator, max_new_tokens=256)
+
     else:
         raise ValueError("TEST must be either 'riffusion' or 'musicgen'")
 
