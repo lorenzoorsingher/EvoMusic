@@ -6,6 +6,12 @@ just define the path to the folder containing the audio, the stats csv file and 
 
 If needed redefine the `__getitem__` method in the MusicDataset class to fit the needs of your model
 
+# DATA PATHS
+To run `usrembeds/main.py` or `usermebeds/test.py` you need to have data in specific paths:
+- MODEL: `usrembeds/checkpoints/your_model_checkpoint.pt`.
+- clean_stats: `usrembeds/checkpoints/data/embeddings/embeddings_full_split/clean_stats.csv` and `usrembeds/data/clean_stats.csv`, this file path hasn't been retrofitted for all usecases.
+- songs embeddings: `usrembeds/data/embeddings/embeddings_full_split/__files__.json`.
+
 # FROM MP3 TO COSSIM
 
 ~~These steps are implemented in the `aligner.py` file, follow them to get from the mp3 file to the cosine similarity between the user embeddings and the music embeddings. User embeddings are stored in the model and correspond to the 1000 users in the Last.fm dataset (actually is a bit less than 1000 because not all users have listened to music avaiable to us).~~
