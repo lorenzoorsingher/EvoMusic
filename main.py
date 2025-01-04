@@ -77,47 +77,19 @@ if __name__ == "__main__":
 
         music_embedding = torch.cat((posemb, negemb), dim=1)
 
-        user_embedding, pos_feedback_wrt_song, neg_feedback_wrt_song = alignerv2(idx, music_embedding)
+        user_embedding, music_feedback = alignerv2(idx, music_embedding)
+        print(f"User embedding shape: {user_embedding.shape}")
+        print(f"Music feedback shape: {music_feedback.shape}")
+        # Music combined shape: [16, 21, 13, 769]
+        music_combined = torch.cat((music_embedding, music_feedback), dim=-1)  
 
-        print(f"Pos embedding shape: {posemb.shape}") # torch.Size([16, 1, 13, 768])
-        print(f"Neg embedding shape: {negemb.shape}") # torch.Size([16, 20, 13, 768])
+        usr_x , music_x = user_embedder(music_combined)
 
-        print(f"Pos feedback shape: {pos_feedback_wrt_song.shape}") # torch.Size([16, 1])
-        print(f"Neg feedback shape: {neg_feedback_wrt_song.shape}") # torch.Size([16, 20])
+        print(f"User embedding shape: {usr_x.shape}")
+        print(f"Music embedding shape: {music_x.shape}")
 
-        music_feedback = torch.cat((pos_feedback_wrt_song, neg_feedback_wrt_song), dim=1)
 
-        print("--------------------------------------")
-        print(f"Music embedding shape: {music_embedding.shape}") # torch.Size([16, 21, 13, 768])
-        print(f"Music feedback shape: {music_feedback.shape}") # torch.Size([16, 21])
 
-        print("--------------------------------------")
-        
-        # Add dimensions to `music_feedback` to match `music_embedding`
-        music_feedback_expanded = music_feedback.unsqueeze(-1).unsqueeze(-1)  # Shape: [16, 21, 1, 1]
-        print(f"Music feedback expanded shape: {music_feedback_expanded.shape}")
 
-        # Expand the feedback dimensions to match `music_embedding`
-        music_feedback_expanded = music_feedback_expanded.expand(-1, -1, 13, 1)  # Shape: [16, 21, 13, 768]
-        print(f"Music feedback expanded shape: {music_feedback_expanded.shape}")
 
-        # Concatenate along the last dimension
-        music_combined = torch.cat((music_embedding, music_feedback_expanded), dim=-1)  # Shape: [16, 21, 13, 769]
-
-        print(f"Music combined shape: {music_combined.shape}")
-
-        print("--------------------------------------")
-        print(music_feedback[0][1])
-        print(music_combined[0][1][0][768])
-
-        exit()
-
-        # # print(user_embedding.shape, pos_feedback_wrt_song.shape, neg_feedback_wrt_song.shape)
-        # music_feedback = torch.cat((pos_feedback_wrt_song, neg_feedback_wrt_song), dim=0)
-        # print(music_embedding.shape)
-        # print(music_feedback.shape)
-        # exit()
-        # user_embedder()
-
-        # print(usr_feedback_wrt_song)
-        # break
+        break

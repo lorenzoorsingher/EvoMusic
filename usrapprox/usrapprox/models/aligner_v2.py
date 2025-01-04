@@ -88,4 +88,11 @@ class AlignerWrapper(AlignerV2):
             negflat = (negflat + 1) / 2
             neg_feedback_wrt_song = probabilistic_model_torch(negflat)
 
-            return user_embedding, pos_feedback_wrt_song, neg_feedback_wrt_song
+            # --------------------------------------------
+
+            music_feedback = torch.cat((pos_feedback_wrt_song, neg_feedback_wrt_song), dim=1)
+            music_feedback_expanded = music_feedback.unsqueeze(-1).unsqueeze(-1)  # Shape: [16, 21, 1, 1]
+            music_feedback_expanded = music_feedback_expanded.expand(-1, -1, 13, 1)  # Shape: [16, 21, 13, 768]
+
+
+            return user_embedding, music_feedback_expanded
