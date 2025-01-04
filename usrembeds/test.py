@@ -35,7 +35,7 @@ if __name__ == "__main__":
         "aggr": "gating-tanh",
         "nusers": 967,
         "prj_size": 768,
-        "drop": 0.2,
+        "drop": 0.25,
         "lr": 0.001,
         "encoder": "MERT",
     }
