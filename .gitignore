@@ -164,6 +164,19 @@ cython_debug/
 # Data
 
 *.wav
+*.mp3
 *.json
-
 generated_audio/
+*.zip
+*.csv
+*.pt
+*.pth
+*.rar
+
+# wandb
+wandb/
+
+# exceptions
+!usrembeds/data/splits.json
+!usrembeds/data/clean_stats.csv
+!usrembeds/exp/*

@@ -1,0 +1,12 @@
+[
+  {
+    "dropout": 0.25,
+    "encoder": "MERT",
+    "learnable_temp": false,
+    "multiplier": 10,
+    "neg_samples": 20,
+    "prj": "bn",
+    "temp": 0.15,
+    "model": "Aligner"
+  }
+]
