@@ -7,3 +7,4 @@ class Categories(Enum):
     dislike = 3
     loved = 4
     hated = 5
+

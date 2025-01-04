@@ -1,7 +1,7 @@
 from math import pi
 import torch
 
-from usrapprox.utils.utils import Categories
+from usrapprox.usrapprox.utils.utils import Categories
 
 def calculate_logits(n: torch.Tensor, linear=False):
 

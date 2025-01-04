@@ -1,7 +1,7 @@
 import unittest
 import torch
 
-from usrapprox.models import calculate_logits, probabilistic_model_torch
+from usrapprox.usrapprox.models import calculate_logits, probabilistic_model_torch
 
 
 class TestProbabilistic(unittest.TestCase):
