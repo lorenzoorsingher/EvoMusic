@@ -75,10 +75,9 @@ def probabilistic_model_torch(input_values: torch.Tensor, linear=False):
     distribution = torch.distributions.Categorical(probs=probabilities)
 
     samples = distribution.sample()
-    samples = samples/probabilities.shape[-1]*2 - 1
+    samples = samples / (probabilities.shape[-1] - 1) * 2 - 1
 
     return samples
-
 
     # import matplotlib.pyplot as plt
     # n = torch.tensor([0.1, 0.5, 0.9])
@@ -89,7 +88,6 @@ def probabilistic_model_torch(input_values: torch.Tensor, linear=False):
     # # set torch as deterministic
     # torch.manual_seed(0)
     # torch.use_deterministic_algorithms(True)
-
 
     # input_values = torch.linspace(0, 1, 100)  # 100 points between 0 and 1
 
