@@ -12,19 +12,19 @@ from diffusers.utils.testing_utils import enable_full_determinism
 RIFFUSION_MODEL_ID = "riffusion/riffusion-model-v1"
 MUSICGEN_MODEL_ID = "facebook/musicgen-small"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-TEST = "riffusion"  # "riffusion"
-
+TEST = "musicgen"  # "riffusion"s
 
 def dummy_safety_checker(images, **kwargs):
     return images, [False] * len(images)
 
 
-class EasyDiffuse:
+class MusicGenerator:
     def __init__(
         self, input_type="text", output_dir="generated_audio", exp_name="test"
     ):
         super().__init__()
         self.input_type = input_type
+        assert input_type in ["text", "token_embeddings", "embeddings"], "input_type must be either 'text', 'token_embedding', or 'embeddings'"
         self.output_dir = output_dir
         self.exp_name = exp_name
 
@@ -50,12 +50,14 @@ class EasyDiffuse:
         )
 
 
-class EasyRiffPipeline(EasyDiffuse):
+class EasyRiffPipeline(MusicGenerator):
     def __init__(
         self,
         input_type="text",
         output_dir="generated_audio",
         exp_name="test",
+        model=RIFFUSION_MODEL_ID,
+        device=DEVICE,
         generator=None,
         inference_steps=50,
     ):
@@ -66,8 +68,8 @@ class EasyRiffPipeline(EasyDiffuse):
         )
         self.generator = generator
         self.inference_steps = inference_steps
-        self.model = DiffusionPipeline.from_pretrained(RIFFUSION_MODEL_ID).to(DEVICE)
-
+        self.model = DiffusionPipeline.from_pretrained(model).to(device)
+    
     def text_to_embed(self, text, max_length=None):
         if max_length is None:
             max_length = self.model.tokenizer.model_max_length
@@ -123,6 +125,7 @@ class EasyRiffPipeline(EasyDiffuse):
 
     def generate_music(self, inputs, **kwargs):
         embeddings = self.transform_inputs(inputs)
+        # generator must be created here to ensure that the generator is the same each time
         output = self.model(
             prompt_embeds=embeddings,
             generator=self.generator,
@@ -139,13 +142,14 @@ class EasyRiffPipeline(EasyDiffuse):
         return audio_path
 
 
-class MusicGenPipeline(EasyDiffuse):
+class MusicGenPipeline(MusicGenerator):
     def __init__(
-        self, input_type="text", output_dir="generated_audio", exp_name="test"
+        self, input_type="text", output_dir="generated_audio", exp_name="test", model=MUSICGEN_MODEL_ID, device=DEVICE
     ):
         super().__init__(input_type, output_dir=output_dir, exp_name=exp_name)
-        self.processor = AutoProcessor.from_pretrained(MUSICGEN_MODEL_ID)
-        self.model = MusicgenForConditionalGeneration.from_pretrained(MUSICGEN_MODEL_ID)
+        assert input_type != "embeddings", "MusicGen does not support embeddings as input"
+        self.processor = AutoProcessor.from_pretrained(model)
+        self.model = MusicgenForConditionalGeneration.from_pretrained(model).to(device)
 
     def text_to_embed(self, text, max_length=None):
         if max_length is None:
@@ -183,7 +187,7 @@ class MusicGenPipeline(EasyDiffuse):
             inputs = {"inputs_embeds": inputs}
             return self.token_embedding_to_embed(inputs).last_hidden_state
         elif self.input_type == "embeddings":
-            return inputs
+            raise ValueError("MusicGen does not support embeddings as input")
         else:
             raise ValueError(
                 "input_type must be either 'text', 'token_embedding', or 'embeddings'"
