@@ -58,11 +58,11 @@ class AlignerWrapper(AlignerV2):
         with torch.no_grad():
             user_embedding, embeddings, _ = super().forward(idx, music_embs)
 
-            print(f"Index shape: {idx.shape}")
-            print(f"Music embeddings shape: {music_embs.shape}")
+            # print(f"Index shape: {idx.shape}")
+            # print(f"Music embeddings shape: {music_embs.shape}")
 
-            print(f"User embedding shape: {user_embedding.shape}")
-            print(f"Embeddings shape: {embeddings.shape}")
+            # print(f"User embedding shape: {user_embedding.shape}")
+            # print(f"Embeddings shape: {embeddings.shape}")
 
             out = user_embedding.unsqueeze(1)
 
@@ -75,17 +75,17 @@ class AlignerWrapper(AlignerV2):
             # breakpoint()
             cos = nn.CosineSimilarity(dim=2, eps=1e-6)
 
-            possim = cos(out, posemb_out).squeeze(1).cpu().detach()
-            possim = (possim+1)/2
+            possim = cos(out, posemb_out)  # .squeeze(1).cpu().detach()
+            possim = (possim + 1) / 2
             pos_feedback_wrt_song = probabilistic_model_torch(possim)
 
-
             out = out.repeat(1, negemb_out.shape[1], 1)
-            negsim = cos(out, negemb_out).cpu().detach()
+            negsim = cos(out, negemb_out)  # .cpu().detach()
 
             negsim = negsim.view(-1, negemb_out.shape[1])
-            negflat = negsim.flatten()
-            negflat = (negflat+1)/2
+            negflat = negsim
+            # negflat = negsim.flatten()
+            negflat = (negflat + 1) / 2
             neg_feedback_wrt_song = probabilistic_model_torch(negflat)
 
             return user_embedding, pos_feedback_wrt_song, neg_feedback_wrt_song
