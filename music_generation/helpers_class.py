@@ -3,16 +3,20 @@ import os
 import scipy
 import torch
 from diffusers import DiffusionPipeline
-from transformers import AutoProcessor, MusicgenForConditionalGeneration, T5EncoderModel
+from transformers import AutoProcessor, MusicgenForConditionalGeneration
+import sys
+
+sys.path.append("../")
+sys.path.append("./")
+import configuration as c
+
+config = c.load_yaml_config("config.yaml")
 
 from riffusion.spectrogram_image_converter import SpectrogramImageConverter
 from riffusion.spectrogram_params import SpectrogramParams
 from diffusers.utils.testing_utils import enable_full_determinism
 
-RIFFUSION_MODEL_ID = "riffusion/riffusion-model-v1"
-MUSICGEN_MODEL_ID = "facebook/musicgen-small"
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-TEST = "musicgen"  # "riffusion"s
+TEST = "riffusion"  # "riffusion"s
 
 
 def dummy_safety_checker(images, **kwargs):
@@ -20,71 +24,109 @@ def dummy_safety_checker(images, **kwargs):
 
 
 class MusicGenerator:
-    def __init__(
-        self, input_type="text", output_dir="generated_audio", exp_name="test"
-    ):
+    """
+    Base class for music generation, contains the main methods to be implemented by the subclasses.
+    """
+
+    def __init__(self, music_generator: c.MusicGeneratorConfig):
         super().__init__()
-        assert input_type in [
-            "text",
-            "token_embeddings",
-            "embeddings",
-            "encoder_hidden_states",
-        ], "input_type must be either 'text', 'token_embedding', 'embeddings' or 'encoder_hidden_states'"
-        self.input_type = input_type
-        self.output_dir = output_dir
-        self.exp_name = exp_name
+        self.config = music_generator
 
-    def text_to_embed(self, inputs):
+    def text_to_embed(self, text: str, max_length: int = None):
+        """
+        Takes text and returns the embeddings for the model
+
+            Args:
+                text (str): text input
+                max_length (int, optional): max length of the generated sequence. Defaults to None.
+        """
         raise NotImplementedError
 
-    def token_embedding_to_embed(self, token_embedding):
+    def token_embedding_to_embed(self, token_embedding: torch.Tensor):
+        """
+        Takes token embeddings from the tokenizer and returns the embeddings for the model
+            Args:
+                token_embedding (torch.Tensor): token embeddings from the tokenizer
+            Returns:
+                torch.Tensor: embeddings for the model, usually output of the whole encoder part of the model
+        """
         raise NotImplementedError
 
-    def text_to_embeddings_before_encoder(self, inputs):
+    def text_to_embeddings_before_encoder(self, text: str):
+        """
+        Takes text and returns the embeddings before the encoder of the model.
+        These are usually the token_embeddings from the tokenizer and the first embedding layer of the model.
+            Args:
+                text (str): text input
+            Returns:
+                torch.Tensor: embeddings before the encoder
+        """
         raise NotImplementedError
 
-    def generate_music(self, embeddings, **kwargs):
+    def generate_music(self, embeddings: torch.Tensor, **kwargs):
+        """
+        Generates music from the embeddings
+            Args:
+                embeddings (torch.Tensor): embeddings for the model
+            Returns:
+                str: system path to the generated audio
+        """
         raise NotImplementedError
 
-    def transform_inputs(self, inputs):
+    def prepare_inputs(self, text: str, max_length: int = None):
+        """
+        Prepares the inputs for the 'transform_inputs' function
+        It uses the tokenizer of the model to tokenize the text and return the inputs for the user, so that calculation
+        can be done on it.
+            Args:
+                text (str): text input
+                max_length (int, optional): max length of the generated sequence. Defaults to None.
+            Returns:
+                dict: inputs for the model
+        """
+        raise NotImplementedError
+
+    def transform_inputs(self, inputs: str | torch.Tensor):
+        """
+        Transforms the inputs to the embeddings that can be used by the model
+            Args:
+                inputs (str | torch.Tensor): inputs to be transformed
+            Returns:
+                torch.Tensor: embeddings for the model
+        """
         raise NotImplementedError
 
     def generate_path(self, exp_name=None):
-        base_name = exp_name or self.exp_name
+        """
+        Generates the path for the output audio, if exp_name is None, it will use the default experiment name
+        The number is given based on the number of files in the output directory.
+            Args:
+                exp_name (str, optional): name of the file. Defaults to None.
+            Returns:
+                str: system path to the generated audio
+        """
+        base_name = self.config.exp_name if exp_name is None else exp_name
         return os.path.join(
-            self.output_dir,
-            f"{base_name + '_' + str(len(os.listdir(self.output_dir)))}.wav",
+            self.config.output_dir,
+            f"{base_name + '_' + str(len(os.listdir(self.config.output_dir)))}.wav",
         )
 
 
 class EasyRiffPipeline(MusicGenerator):
-    def __init__(
-        self,
-        input_type="text",
-        output_dir="generated_audio",
-        exp_name="test",
-        model=RIFFUSION_MODEL_ID,
-        device=DEVICE,
-        inference_steps=50,
-    ):
-        super().__init__(input_type, output_dir=output_dir, exp_name=exp_name)
+    def __init__(self, riffusion_config: c.EasyRiffusionConfig):
+        super().__init__(riffusion_config)
         self.width = math.ceil(3 * (512 / 5))
         self.width = (
             self.width + (8 - self.width % 8) if self.width % 8 != 0 else self.width
         )
-        self.inference_steps = inference_steps
-        self.model = DiffusionPipeline.from_pretrained(model).to(device)
+        self.model = DiffusionPipeline.from_pretrained(self.config.model).to(
+            self.config.device
+        )
+        self.model.safety_checker = dummy_safety_checker
+        self.config.inference_steps = riffusion_config.inference_steps
 
     def text_to_embed(self, text, max_length=None):
-        if max_length is None:
-            max_length = self.model.tokenizer.model_max_length
-        inputs = self.model.tokenizer(
-            text,
-            padding="max_length",
-            max_length=max_length,
-            truncation=True,
-            return_tensors="pt",
-        )
+        inputs = self.prepare_inputs(text, max_length)
         with torch.no_grad():
             embedded_text = self.model.text_encoder(
                 inputs.input_ids.to(self.model.device)
@@ -99,6 +141,16 @@ class EasyRiffPipeline(MusicGenerator):
             return self.model.text_encoder.text_model.final_layer_norm(encoded)
 
     def text_to_embeddings_before_encoder(self, text, max_length=None):
+        inputs = self.prepare_inputs(text, max_length)
+        with torch.no_grad():
+            return self.model.text_encoder.text_model.embeddings(
+                inputs.input_ids.to(self.model.device)
+            )
+
+    def __call__(self, *args, **kwargs):
+        return self.model(*args, **kwargs)
+
+    def prepare_inputs(self, text, max_length=None):
         if max_length is None:
             max_length = self.model.tokenizer.model_max_length
         inputs = self.model.tokenizer(
@@ -108,20 +160,17 @@ class EasyRiffPipeline(MusicGenerator):
             truncation=True,
             return_tensors="pt",
         )
-        with torch.no_grad():
-            return self.model.text_encoder.text_model.embeddings(
-                inputs.input_ids.to(self.model.device)
-            )
-
-    def __call__(self, *args, **kwargs):
-        return self.model(*args, **kwargs)
+        for key in inputs:
+            if isinstance(inputs[key], torch.Tensor):
+                inputs[key] = inputs[key].to(self.model.device)
+        return inputs
 
     def transform_inputs(self, inputs):
-        if self.input_type == "text":
+        if self.config.input_type == "text":
             return self.text_to_embed(inputs)
-        elif self.input_type == "token_embeddings":
+        elif self.config.input_type == "token_embeddings":
             return self.token_embedding_to_embed(inputs)
-        elif self.input_type == "embeddings":
+        elif self.config.input_type == "embeddings":
             return inputs
         else:
             raise ValueError(
@@ -136,8 +185,7 @@ class EasyRiffPipeline(MusicGenerator):
         output = self.model(
             prompt_embeds=embeddings,
             generator=generator,
-            safety_checker=dummy_safety_checker,
-            num_inference_steps=self.inference_steps,
+            num_inference_steps=self.config.inference_steps,
             **kwargs,
         )
         audio_path = self.generate_path()
@@ -150,58 +198,57 @@ class EasyRiffPipeline(MusicGenerator):
 
 
 class MusicGenPipeline(MusicGenerator):
-    def __init__(
-        self,
-        input_type="text",
-        output_dir="generated_audio",
-        exp_name="test",
-        model=MUSICGEN_MODEL_ID,
-        device=DEVICE,
-    ):
-        super().__init__(input_type, output_dir=output_dir, exp_name=exp_name)
-        self.processor = AutoProcessor.from_pretrained(model)
-        self.model = MusicgenForConditionalGeneration.from_pretrained(model).to(device)
+    def __init__(self, musicgen_config: c.MusicGeneratorConfig):
+        super().__init__(musicgen_config)
+        self.processor = AutoProcessor.from_pretrained(self.config.model)
+        self.model = MusicgenForConditionalGeneration.from_pretrained(
+            self.config.model
+        ).to(self.config.device)
 
-    def text_to_encoder_hidden_states(self, text, max_length=None):
-        if max_length is None:
-            max_length = self.processor.tokenizer.model_max_length
-        inputs = self.processor(
-            text=[text],
-            padding=True,
-            return_tensors="pt",
-            truncation=True,
-            max_length=max_length,
-        )
+    def text_to_embed(self, text, max_length=None):
+        inputs = self.prepare_inputs(text, max_length)
+
         with torch.no_grad():
-            return self.model.get_encoder()(**inputs)
+            # TODO: Not Working right now, need to fix
+            return self.model._prepare_text_encoder_kwargs_for_generation(
+                inputs["input_ids"]
+            )
 
     def text_to_embeddings_before_encoder(self, text, max_length=None):
+        inputs = self.prepare_inputs(text, max_length)
+
+        with torch.no_grad():
+            return self.model.get_input_embeddings()(inputs["input_ids"]).view()
+
+    def prepare_inputs(self, text, max_length=None):
         if max_length is None:
             max_length = self.processor.tokenizer.model_max_length
         inputs = self.processor(
             text=[text],
-            padding=True,
             return_tensors="pt",
             truncation=True,
             max_length=max_length,
         )
-
-        with torch.no_grad():
-            return self.model.get_input_embeddings()(inputs["input_ids"])
+        for key in inputs:
+            if isinstance(inputs[key], torch.Tensor):
+                inputs[key] = inputs[key].to(self.model.device)
+        return inputs
 
     def transform_inputs(self, inputs):
-        if self.input_type == "text":
-            return {"inputs_embeds": self.text_to_embeddings_before_encoder(inputs)}
-        elif self.input_type == "token_embeddings":
+        if self.config.input_type == "text":
+            return self.processor(text=[inputs], return_tensors="pt")
+        elif self.config.input_type == "token_embeddings":
             return {"inputs_embeds": inputs}
-        elif self.input_type == "encoder_hidden_states":
-            # inputs.attentions = torch.ones(inputs.last_hidden_state.nelement())
+        elif self.config.input_type == "embeddings":
+            inputs.last_hidden_state = torch.concatenate(
+                [inputs.last_hidden_state, torch.zeros_like(inputs.last_hidden_state)],
+                dim=0,
+            )
             return {"encoder_outputs": inputs}
 
     def generate_music(self, inputs, **kwargs):
         embeddings = self.transform_inputs(inputs)
         audio_path = self.generate_path()
-        generator = torch.Generator(device=self.model.device)
         audio_values = self.model.generate(**embeddings, **kwargs)
         sampling_rate = self.model.config.audio_encoder.sampling_rate
         scipy.io.wavfile.write(
@@ -220,58 +267,46 @@ if __name__ == "__main__":
     txt = "Create a retro 80s synthwave track with nostalgic synthesizers, a steady electronic beat, and atmospheric reverb. Imagine a neon-lit night drive."
 
     if TEST == "riffusion":
-        width = math.ceil(3 * (512 / 5))
-        width = width + (8 - width % 8) if width % 8 != 0 else width
         # ---------------- Test with text directly ----------------
-        riffusion_pipe = EasyRiffPipeline(
-            input_type="text",
-            output_dir=output_dir,
-            exp_name="riffusion_text",
-            inference_steps=10,
-        )
+        cfg = config.riffusion_pipeline
 
+        riffusion_pipe = EasyRiffPipeline(cfg)
         riffusion_pipe.generate_music(txt)
         # ---------------- Test with embeds directly ----------------
-        riffusion_pipe = EasyRiffPipeline(
-            input_type="embeddings",
-            output_dir=output_dir,
-            exp_name="riffusion_embeddings",
-            inference_steps=10,
-        )
-        embedding = riffusion_pipe.text_to_embed(txt, 30)
+        cfg.exp_name = "riffusion_embeds"
+        cfg.input_type = "embeddings"
+
+        riffusion_pipe = EasyRiffPipeline(cfg)
+        embedding = riffusion_pipe.text_to_embed(txt)
         riffusion_pipe.generate_music(embedding)
 
         # ---------------- Test with pre Clip ----------------
-        riffusion_pipe = EasyRiffPipeline(
-            input_type="token_embeddings",
-            output_dir=output_dir,
-            exp_name="riffusion_preclip",
-            inference_steps=10,
-        )
-        embedding_pre = riffusion_pipe.text_to_embeddings_before_encoder(txt, 30)
+        cfg.exp_name = "riffusion_clip"
+        cfg.input_type = "token_embeddings"
+
+        riffusion_pipe = EasyRiffPipeline(cfg)
+        embedding_pre = riffusion_pipe.text_to_embeddings_before_encoder(txt)
         riffusion_pipe.generate_music(embedding)
 
     elif TEST == "musicgen":
+        cfg = config.music_generator
         # ---------------- Test with text directly ----------------
-        musicgen_pipe = MusicGenPipeline("text", output_dir, "musicgen_text")
+        musicgen_pipe = MusicGenPipeline(cfg)
         path = musicgen_pipe.generate_music(txt, max_new_tokens=256)
 
         # ---------------- Test with pre T5 ----------------
-        inputs_gen = musicgen_pipe.text_to_embeddings_before_encoder(
-            txt, max_length=256
-        )
-        musicgen_pipe = MusicGenPipeline(
-            "token_embeddings", output_dir, "token_embeddings"
-        )
+        inputs_gen = musicgen_pipe.text_to_embeddings_before_encoder(txt)
+        cfg.exp_name = "musicgen_pre"
+        cfg.input_type = "token_embeddings"
+        musicgen_pipe = MusicGenPipeline(cfg)
         path = musicgen_pipe.generate_music(inputs_gen, max_new_tokens=256)
 
-        # ---------------- Test with encoder_hidden_states ----------------
-        musicgen_pipe = MusicGenPipeline(
-            "encoder_hidden_states", output_dir, "encoder_hidden_states"
-        )
-        inputs_gen = musicgen_pipe.text_to_encoder_hidden_states(txt, max_length=256)
-        breakpoint()
-        path = musicgen_pipe.generate_music(inputs_gen, max_new_tokens=256)
+        # ---------------- Test with embeds ----------------
+        # cfg.exp_name = "musicgen_embeds"
+        # cfg.input_type = "embeddings"
+        # musicgen_pipe = MusicGenPipeline(cfg)
+        # inputs_gen = musicgen_pipe.text_to_embed(txt, max_length=256)
+        # path = musicgen_pipe.generate_music(inputs_gen, max_new_tokens=256)
 
     else:
         raise ValueError("TEST must be either 'riffusion' or 'musicgen'")
