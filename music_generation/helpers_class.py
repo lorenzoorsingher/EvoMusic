@@ -166,12 +166,18 @@ class EasyRiffPipeline(MusicGenerator):
         return inputs
 
     def transform_inputs(self, inputs):
+        if isinstance(inputs, torch.Tensor):
+            emb_size = inputs.shape[-1]
+            seq_len = inputs.shape[-2]
+            i = inputs.view(1, seq_len, emb_size)
+        else:
+            i = inputs
         if self.config.input_type == "text":
-            return self.text_to_embed(inputs)
+            return self.text_to_embed(i)
         elif self.config.input_type == "token_embeddings":
-            return self.token_embedding_to_embed(inputs)
+            return self.token_embedding_to_embed(i)
         elif self.config.input_type == "embeddings":
-            return inputs
+            return i
         else:
             raise ValueError(
                 "input_type must be either 'text', 'token_embedding', or 'embeddings'"
@@ -235,16 +241,22 @@ class MusicGenPipeline(MusicGenerator):
         return inputs
 
     def transform_inputs(self, inputs):
+        if isinstance(inputs, torch.Tensor):
+            emb_size = inputs.shape[-1]
+            seq_len = inputs.shape[-2]
+            i = inputs.view(1, seq_len, emb_size)
+        else:
+            i = inputs
         if self.config.input_type == "text":
-            return self.processor(text=[inputs], return_tensors="pt")
+            return self.processor(text=[i], return_tensors="pt")
         elif self.config.input_type == "token_embeddings":
-            return {"inputs_embeds": inputs}
+            return {"inputs_embeds": i}
         elif self.config.input_type == "embeddings":
-            inputs.last_hidden_state = torch.concatenate(
-                [inputs.last_hidden_state, torch.zeros_like(inputs.last_hidden_state)],
+            i.last_hidden_state = torch.concatenate(
+                [i.last_hidden_state, torch.zeros_like(i.last_hidden_state)],
                 dim=0,
             )
-            return {"encoder_outputs": inputs}
+            return {"encoder_outputs": i}
 
     def generate_music(self, inputs, **kwargs):
         embeddings = self.transform_inputs(inputs)
@@ -264,7 +276,7 @@ if __name__ == "__main__":
     name = "musicgen_out" if TEST == "musicgen" else "riffusion_out"
     enable_full_determinism()
 
-    txt = "Create a retro 80s synthwave track with nostalgic synthesizers, a steady electronic beat, and atmospheric reverb. Imagine a neon-lit night drive."
+    txt = "Create a retro 80s synthwave track with nostalgic synthesizers, a steady electronic beat, and atmospheric reverb. Imagine a super dark and moody track with a lot of tension and suspense. The track should be perfect for a cyberpunk movie or a futuristic video game."
 
     if TEST == "riffusion":
         # ---------------- Test with text directly ----------------
