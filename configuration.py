@@ -47,11 +47,6 @@ class MusicGeneratorConfig:
 
 
 @dataclass
-class MusicGenerator:
-    config: MusicGeneratorConfig
-
-
-@dataclass
 class EasyRiffusionConfig(MusicGeneratorConfig):
     model: str = "riffusion/riffusion-model-v1"
     inference_steps: int = 50
