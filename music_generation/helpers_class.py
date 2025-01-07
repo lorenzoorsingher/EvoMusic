@@ -3,7 +3,7 @@ import os
 import scipy
 import torch
 from diffusers import DiffusionPipeline
-from transformers import AutoProcessor, MusicgenForConditionalGeneration
+from transformers import AutoProcessor, MusicgenForConditionalGeneration, set_seed
 import sys
 
 sys.path.append("../")
@@ -16,7 +16,7 @@ from riffusion.spectrogram_image_converter import SpectrogramImageConverter
 from riffusion.spectrogram_params import SpectrogramParams
 from diffusers.utils.testing_utils import enable_full_determinism
 
-TEST = "riffusion"  # "riffusion"s
+TEST = "musicgen"  # "riffusion"s
 
 
 def dummy_safety_checker(images, **kwargs):
@@ -123,7 +123,6 @@ class EasyRiffPipeline(MusicGenerator):
             self.config.device
         )
         self.model.safety_checker = dummy_safety_checker
-        self.config.inference_steps = riffusion_config.inference_steps
 
     def text_to_embed(self, text, max_length=None):
         inputs = self.prepare_inputs(text, max_length)
@@ -131,7 +130,7 @@ class EasyRiffPipeline(MusicGenerator):
             embedded_text = self.model.text_encoder(
                 inputs.input_ids.to(self.model.device)
             )
-        return embedded_text.last_hidden_state
+        return embedded_text.last_hidden_state.to(self.model.device)
 
     def token_embedding_to_embed(self, token_embedding):
         with torch.no_grad():
@@ -140,12 +139,15 @@ class EasyRiffPipeline(MusicGenerator):
             ).last_hidden_state
             return self.model.text_encoder.text_model.final_layer_norm(encoded)
 
-    def text_to_embeddings_before_encoder(self, text, max_length=None):
-        inputs = self.prepare_inputs(text, max_length)
+    def text_to_embeddings_before_encoder(self, text):
+        inputs = self.prepare_inputs(text)
         with torch.no_grad():
             return self.model.text_encoder.text_model.embeddings(
                 inputs.input_ids.to(self.model.device)
             )
+
+    def get_embedding_size(self):
+        return self.model.text_encoder.text_model.config.hidden_size
 
     def __call__(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -166,12 +168,12 @@ class EasyRiffPipeline(MusicGenerator):
         return inputs
 
     def transform_inputs(self, inputs):
+        emb_size = self.get_embedding_size()
         if isinstance(inputs, torch.Tensor):
-            emb_size = inputs.shape[-1]
-            seq_len = inputs.shape[-2]
-            i = inputs.view(1, seq_len, emb_size)
+            i = inputs.view(1, -1, emb_size).to(device=self.model.device)
         else:
             i = inputs
+
         if self.config.input_type == "text":
             return self.text_to_embed(i)
         elif self.config.input_type == "token_embeddings":
@@ -224,7 +226,10 @@ class MusicGenPipeline(MusicGenerator):
         inputs = self.prepare_inputs(text, max_length)
 
         with torch.no_grad():
-            return self.model.get_input_embeddings()(inputs["input_ids"]).view()
+            return self.model.get_input_embeddings()(inputs["input_ids"])
+
+    def get_embedding_size(self):
+        return self.model.text_encoder.config.hidden_size
 
     def prepare_inputs(self, text, max_length=None):
         if max_length is None:
@@ -241,14 +246,17 @@ class MusicGenPipeline(MusicGenerator):
         return inputs
 
     def transform_inputs(self, inputs):
+        emb_size = self.get_embedding_size()
         if isinstance(inputs, torch.Tensor):
-            emb_size = inputs.shape[-1]
-            seq_len = inputs.shape[-2]
-            i = inputs.view(1, seq_len, emb_size)
+            i = inputs.view(1, -1, emb_size).to(device=self.model.device)
         else:
             i = inputs
         if self.config.input_type == "text":
-            return self.processor(text=[i], return_tensors="pt")
+            outputs = self.processor(text=[i], return_tensors="pt")
+            for key in outputs:
+                if isinstance(outputs[key], torch.Tensor):
+                    outputs[key] = outputs[key].to(self.model.device)
+            return outputs
         elif self.config.input_type == "token_embeddings":
             return {"inputs_embeds": i}
         elif self.config.input_type == "embeddings":
@@ -261,10 +269,13 @@ class MusicGenPipeline(MusicGenerator):
     def generate_music(self, inputs, **kwargs):
         embeddings = self.transform_inputs(inputs)
         audio_path = self.generate_path()
-        audio_values = self.model.generate(**embeddings, **kwargs)
+        set_seed(0)
+        audio_values = self.model.generate(
+            **embeddings, **kwargs, do_sample=True, top_k=0
+        )
         sampling_rate = self.model.config.audio_encoder.sampling_rate
         scipy.io.wavfile.write(
-            audio_path, rate=sampling_rate, data=audio_values[0, 0].detach().numpy()
+            audio_path, rate=sampling_rate, data=audio_values[0, 0].cpu().numpy()
         )
         return audio_path
 
@@ -276,13 +287,16 @@ if __name__ == "__main__":
     name = "musicgen_out" if TEST == "musicgen" else "riffusion_out"
     enable_full_determinism()
 
-    txt = "Create a retro 80s synthwave track with nostalgic synthesizers, a steady electronic beat, and atmospheric reverb. Imagine a super dark and moody track with a lot of tension and suspense. The track should be perfect for a cyberpunk movie or a futuristic video game."
+    txt = "Create a retro 80s synthwave track with nostalgic synthesizers, a steady electronic beat, and atmospheric reverb."
 
     if TEST == "riffusion":
         # ---------------- Test with text directly ----------------
         cfg = config.riffusion_pipeline
 
         riffusion_pipe = EasyRiffPipeline(cfg)
+        print(riffusion_pipe.model.text_encoder.text_model.config)
+        # print(riffusion_pipe.model)
+        print(riffusion_pipe.get_embedding_size(), riffusion_pipe.get_sequence_length())
         riffusion_pipe.generate_music(txt)
         # ---------------- Test with embeds directly ----------------
         cfg.exp_name = "riffusion_embeds"
@@ -305,6 +319,7 @@ if __name__ == "__main__":
         # ---------------- Test with text directly ----------------
         musicgen_pipe = MusicGenPipeline(cfg)
         path = musicgen_pipe.generate_music(txt, max_new_tokens=256)
+        print()
 
         # ---------------- Test with pre T5 ----------------
         inputs_gen = musicgen_pipe.text_to_embeddings_before_encoder(txt)
