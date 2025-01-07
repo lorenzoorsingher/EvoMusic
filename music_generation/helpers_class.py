@@ -63,6 +63,14 @@ class MusicGenerator:
         """
         raise NotImplementedError
 
+    def get_embedding_size(self):
+        """
+        Returns the size of the embeddings for the specific model
+            Returns:
+                int: size of the embeddings
+        """
+        raise NotImplementedError
+
     def generate_music(self, embeddings: torch.Tensor, **kwargs):
         """
         Generates music from the embeddings
