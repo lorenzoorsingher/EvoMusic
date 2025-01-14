@@ -71,7 +71,7 @@ class MusicGenerator:
         """
         raise NotImplementedError
 
-    def generate_music(self, embeddings: torch.Tensor, duration: int,**kwargs):
+    def generate_music(self, embeddings: torch.Tensor, duration: int, **kwargs):
         """
         Generates music from the embeddings
             Args:
@@ -272,7 +272,7 @@ class MusicGenPipeline(MusicGenerator):
             )
             return {"encoder_outputs": i}
 
-    def generate_music(self, inputs, duration=None,**kwargs):
+    def generate_music(self, inputs, duration=None, **kwargs):
         embeddings = self.transform_inputs(inputs)
         audio_path = self.generate_path()
         set_seed(0)
