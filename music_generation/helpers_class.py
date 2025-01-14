@@ -190,7 +190,7 @@ class EasyRiffPipeline(MusicGenerator):
                 "input_type must be either 'text', 'token_embedding', or 'embeddings'"
             )
 
-    def generate_music(self, inputs, duration=None, **kwargs):
+    def generate_music(self, inputs, duration=5, **kwargs):
         embeddings = self.transform_inputs(inputs)
         width = math.ceil(duration * (512 / 5))
         generator = torch.Generator(device=self.model.device)
@@ -272,11 +272,11 @@ class MusicGenPipeline(MusicGenerator):
             )
             return {"encoder_outputs": i}
 
-    def generate_music(self, inputs, duration=None, **kwargs):
+    def generate_music(self, inputs, duration=5, **kwargs):
         embeddings = self.transform_inputs(inputs)
         audio_path = self.generate_path()
         set_seed(0)
-        kwargs["max_new_tokens"] = int((duration | 5) / 5 * 256)
+        kwargs["max_new_tokens"] = int(duration / 5 * 256)
         audio_values = self.model.generate(
             **embeddings, **kwargs, do_sample=True, top_k=0
         )
