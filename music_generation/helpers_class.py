@@ -71,11 +71,12 @@ class MusicGenerator:
         """
         raise NotImplementedError
 
-    def generate_music(self, embeddings: torch.Tensor, **kwargs):
+    def generate_music(self, embeddings: torch.Tensor, duration: int,**kwargs):
         """
         Generates music from the embeddings
             Args:
                 embeddings (torch.Tensor): embeddings for the model
+                duration (int): duration in seconds of the generated audio
             Returns:
                 str: system path to the generated audio
         """
@@ -123,10 +124,6 @@ class MusicGenerator:
 class EasyRiffPipeline(MusicGenerator):
     def __init__(self, riffusion_config: c.EasyRiffusionConfig):
         super().__init__(riffusion_config)
-        self.width = math.ceil(3 * (512 / 5))
-        self.width = (
-            self.width + (8 - self.width % 8) if self.width % 8 != 0 else self.width
-        )
         self.model = DiffusionPipeline.from_pretrained(self.config.model).to(
             self.config.device
         )
@@ -193,15 +190,16 @@ class EasyRiffPipeline(MusicGenerator):
                 "input_type must be either 'text', 'token_embedding', or 'embeddings'"
             )
 
-    def generate_music(self, inputs, **kwargs):
+    def generate_music(self, inputs, duration=None, **kwargs):
         embeddings = self.transform_inputs(inputs)
-
+        width = math.ceil(duration * (512 / 5))
         generator = torch.Generator(device=self.model.device)
         generator.manual_seed(0)
         output = self.model(
             prompt_embeds=embeddings,
             generator=generator,
             num_inference_steps=self.config.inference_steps,
+            width=width,
             **kwargs,
         )
         audio_path = self.generate_path()
@@ -274,10 +272,11 @@ class MusicGenPipeline(MusicGenerator):
             )
             return {"encoder_outputs": i}
 
-    def generate_music(self, inputs, **kwargs):
+    def generate_music(self, inputs, duration=None,**kwargs):
         embeddings = self.transform_inputs(inputs)
         audio_path = self.generate_path()
         set_seed(0)
+        kwargs["max_new_tokens"] = int((duration | 5) / 5 * 256)
         audio_values = self.model.generate(
             **embeddings, **kwargs, do_sample=True, top_k=0
         )
