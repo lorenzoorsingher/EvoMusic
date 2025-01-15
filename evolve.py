@@ -1,11 +1,13 @@
+from copy import deepcopy
 import os
-import evotorch
 import torch
 import torchaudio
+
+import evotorch
 from evotorch import Problem, Solution
 from evotorch.algorithms import CMAES, SearchAlgorithm, PGPE, XNES, SNES, CEM
 from evotorch.algorithms.searchalgorithm import SinglePopulationAlgorithmMixin
-from diffusers import DiffusionPipeline
+
 from diffusers.utils.testing_utils import enable_full_determinism
 from sklearn.decomposition import PCA
 import joblib
@@ -23,8 +25,10 @@ import gc
 import numpy as np
 from tqdm.auto import tqdm
 from dotenv import load_dotenv
+from configuration import load_yaml_config
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import sys
@@ -32,8 +36,8 @@ import sys
 sys.path.append("./")
 
 sys.path.append("music_generation")
-from riffusion.spectrogram_image_converter import SpectrogramImageConverter
-from riffusion.spectrogram_params import SpectrogramParams
+from music_generation.generators import MusicGenerator, MusicGenPipeline
+from usrembeds.models.model import AlignerV2
 
 # ----------------------------- Configuration -----------------------------
 
@@ -41,21 +45,26 @@ from riffusion.spectrogram_params import SpectrogramParams
 load_dotenv()
 
 # Paths and IDs
-TARGET_AUDIO_PATH = "generated_audio/generated_music.wav"  # <-- Replace with your actual target audio path
-MODEL_ID = "riffusion/riffusion-model-v1"
-LLM_API_URL = "http://127.0.0.1:1234/v1/chat/completions"  # Ensure this is your running LLM API endpoint
-LLM_MODEL = "llama-3.2-1b-instruct"  # Ensure this matches your LLM model
+USER = False  # Set to False to optimize for a target embedding instead of a user
+TARGET_USER_ID = 137  # <-- Replace with your actual target user ID
+TARGET_AUDIO_PATH = "generated_audio/breaking_me_down.wav"  # <-- Replace with your actual target audio path
+
+LLM_API_URL = "https://llm.cavic-fam.it/v1/chat/completions"  # Ensure this is your running LLM API endpoint
+LLM_MODEL = "llama3.2"  # Ensure this matches your LLM model
+# LLM_MODEL = "llama3.2-vision:11b"  # Ensure this matches your LLM model
+API_KEY = "gerry_scotti"
 # LLM_API_URL = "https://api.openai.com/v1/chat/completions"
 # LLM_MODEL = "gpt-4o-mini"
-API_KEY = os.getenv("API_KEY")
+# API_KEY = os.getenv("API_KEY")
 
 # Device configuration
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+print("using device",DEVICE)
 PROBLEM_DEVICE = "cpu"  # Problem is run on CPU to avoid memory issues
 
 # Evolutionary Algorithm Parameters
 POPULATION_SIZE = 50
-TEMPERATURE_GENERATION = 1.5
+TEMPERATURE_GENERATION = 1
 NUM_GENERATIONS = 100
 
 # parameters for generation
@@ -64,31 +73,37 @@ DURATION = 5  # in seconds
 
 # Optimization Mode
 # Set to True for prompt optimization, False for embedding optimization
-PROMPT_OPTIM = False
+PROMPT_OPTIM = True
+PROMPT_OPTIM_STRATEGY =  "naive"
+# "naive" to send everything to the LM and make it generate the next prompts "breed" to use a more principled approach were we select the parents and generate offspring using operators defined and explained to the LM
 
 # PROMPT OPTIM params
-ELITES = 0
+ELITES = 0.02
 CROSS_MUTATION = 0
 NOVEL_PROMPTS = 0.1
 TOURNAMENT_SIZE = 5
-TEMPERATURE_EVOLVE = 0.8
+TEMPERATURE_EVOLVE = 0.75
 MAX_HISTORY = 10
 
 # EMBED OPTIM params
-EMB_SIZE = 768 # Embedding size for CLIP model
 MAX_SEQ_LEN = 5  # Maximum sequence length for CLIP model (should be 77)
 SEARCHER = "cmaes"  # Choose between "cmaes", "pgpe", "xnes", "snes", "cem"
 
-VISUALIZATION = True
+VISUALIZATION = False
 
 # -------------------------------------------------------------------------
 
 # ------------------------- Audio Embedding Setup -------------------------
 
 # Load the tokenizer and model
-model = AutoModel.from_pretrained("m-a-p/MERT-v1-95M", trust_remote_code=True).to(DEVICE)
-processor = Wav2Vec2FeatureExtractor.from_pretrained("m-a-p/MERT-v1-95M", trust_remote_code=True)
+music_embedder_model = AutoModel.from_pretrained(
+    "m-a-p/MERT-v1-95M", trust_remote_code=True
+).to(DEVICE)
+processor = Wav2Vec2FeatureExtractor.from_pretrained(
+    "m-a-p/MERT-v1-95M", trust_remote_code=True
+)
 resample_rate = processor.sampling_rate
+
 
 def get_audio_embedding(audio_path):
     """
@@ -114,14 +129,45 @@ def get_audio_embedding(audio_path):
     with torch.no_grad():
         inputs = processor(waveform, sampling_rate=resample_rate, return_tensors="pt")
         inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
-        output = model(**inputs)
-        embedding = output.last_hidden_state.mean(dim=1).squeeze(0)
+        output = music_embedder_model(**inputs, output_hidden_states=True)
+        embedding = torch.stack(output.hidden_states).mean(dim=2).view(13, -1)
 
     # Clear memory
-    # del emb, ts, 
-    del waveform  
-    
+    # del emb, ts,
+    del waveform
+
     return embedding.to(DEVICE)
+
+
+state_dict, conf, _ = AlignerV2.load_model(
+    "usrembeds/checkpoints/AlignerV2_best_model.pt", DEVICE
+)
+# breakpoint()
+model_conf = {
+    "emb_size": conf["emb_size"],
+    "prj_size": conf["prj_size"],
+    "prj_type": conf["prj"],
+    "aggragation": conf["aggr"],
+    "n_users": conf["nusers"],
+    "lt": conf["learnable_temp"],
+}
+model = AlignerV2(**model_conf).to(DEVICE)
+model.load_state_dict(state_dict)
+model.eval()
+
+
+def get_user_likeness(audio_path, user_idx=0):
+    audio_emb = get_audio_embedding(audio_path)
+    audio_emb = audio_emb.unsqueeze(0).unsqueeze(0)
+
+    # if user_idx is not a tensor, convert it to a tensor
+    if not torch.is_tensor(user_idx):
+        user_idx = torch.tensor(user_idx).to(DEVICE).unsqueeze(0)
+
+    with torch.no_grad():
+        urs_x, embs, temp = model(user_idx, audio_emb)
+        return torch.cosine_similarity(urs_x[0], embs[0][0], dim=0).item()
+
 
 # compute PCA on embeddings using the songs in a music dataset
 def compute_pca():
@@ -129,7 +175,7 @@ def compute_pca():
     embeddings = []
     audios = os.listdir(audio_path)
 
-    pca = PCA(n_components=min(768,len(audios)))
+    pca = PCA(n_components=min(768, len(audios)))
     pca_3D = PCA(n_components=3)
 
     # look if already computed
@@ -139,7 +185,7 @@ def compute_pca():
     else:
         for file in tqdm(audios):
             emb = get_audio_embedding(os.path.join(audio_path, file))
-            embeddings.append(emb.cpu().numpy())
+            embeddings.append(emb.view(-1).cpu().numpy())
         embeddings = np.array(embeddings)
 
         pca.fit(embeddings)
@@ -150,137 +196,100 @@ def compute_pca():
         # show 3D PCA space
         embeddings = pca_3D.transform(embeddings)
         # normalize each embedding
-        embeddings = embeddings / np.linalg.norm(embeddings, axis=1)[:,None]
+        embeddings = embeddings / np.linalg.norm(embeddings, axis=1)[:, None]
         fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        ax.scatter(embeddings[:,0], embeddings[:,1], embeddings[:,2])
-        ax.set_xlabel('PCA 1')
-        ax.set_ylabel('PCA 2')
-        ax.set_zlabel('PCA 3')
+        ax = fig.add_subplot(111, projection="3d")
+        ax.scatter(embeddings[:, 0], embeddings[:, 1], embeddings[:, 2])
+        ax.set_xlabel("PCA 1")
+        ax.set_ylabel("PCA 2")
+        ax.set_zlabel("PCA 3")
         plt.show()
 
     return pca, pca_3D  # Return both PCA objects
 
+
 pca, pca_3D = compute_pca()
 
 # Compute target embedding
-print("Computing target audio embedding...")
-if not os.path.isfile(TARGET_AUDIO_PATH):
-    raise FileNotFoundError(f"Target audio file not found at: {TARGET_AUDIO_PATH}")
+if not USER:
+    print("Computing target audio embedding...")
+    if not os.path.isfile(TARGET_AUDIO_PATH):
+        raise FileNotFoundError(f"Target audio file not found at: {TARGET_AUDIO_PATH}")
 
-target_embedding_full = get_audio_embedding(TARGET_AUDIO_PATH).to(DEVICE)
-target_embedding = pca.transform(target_embedding_full.cpu().numpy().reshape(1,-1))[0]
-target_embedding = torch.tensor(target_embedding).to(DEVICE)
+    target_embedding_full = get_audio_embedding(TARGET_AUDIO_PATH).to(DEVICE)
+    target_embedding = pca.transform(target_embedding_full.cpu().numpy().reshape(1, -1))[0]
+    target_embedding = torch.tensor(target_embedding).to(DEVICE)
 
-# Project target embedding into 3D PCA space
-target_embedding_3D = pca_3D.transform(target_embedding_full.cpu().numpy().reshape(1,-1))[0]
-# normalize the embedding
-target_embedding_3D = target_embedding_3D / np.linalg.norm(target_embedding_3D)
-print("Target embedding computed.")
+    # Project target embedding into 3D PCA space
+    target_embedding_3D = pca_3D.transform(
+        target_embedding_full.cpu().numpy().reshape(1, -1)
+    )[0]
+    # normalize the embedding
+    target_embedding_3D = target_embedding_3D / np.linalg.norm(target_embedding_3D)
+    print("Target embedding computed.")
 
 # ------------------------- Music Generation Setup ------------------------
 
-# Load the Riffusion model pipeline
-print("Loading Riffusion model pipeline...")
-pipe = DiffusionPipeline.from_pretrained(MODEL_ID)
-pipe = pipe.to(DEVICE)
-
-# Dummy safety checker to bypass the safety check
-def dummy_safety_checker(images, **kwargs):
-    return images, [False] * len(images)
-pipe.safety_checker = dummy_safety_checker
 # enable full deterministic mode
 enable_full_determinism()
 
-generator = torch.Generator(device=DEVICE)
-print("Riffusion pipeline loaded.")
-
-def generate_music_riffusion(prompt: str=None, embeds=None, num_inference_steps: int = NUM_INFERENCE_STEPS, duration: int = DURATION, name = None):
-    """
-    Generate music using the Riffusion model based on a text prompt or embeddings.
-    Returns the path to the generated audio file.
-    """
-
-    assert (prompt is not None) or (embeds is not None), "Either prompt or embeds must be provided."
-
-    width = math.ceil(duration * (512 / 5))  # Calculate the width based on the duration
-    # must be divisible by 8
-    width = width + (8 - width % 8) if width % 8 != 0 else width
-    if prompt is not None:
-        # print(f"Generating music with prompt: '{prompt}'")
-        generator.manual_seed(0)
-        output = pipe(prompt, num_inference_steps=num_inference_steps, width=width, generator=generator)
-    else:
-        # print(f"Generating music with embeddings.")
-        embeds = embeds.view(1, MAX_SEQ_LEN, EMB_SIZE).to(DEVICE)
-        generator.manual_seed(0)
-        output = pipe(prompt_embeds=embeds, num_inference_steps=num_inference_steps, width=width, generator=generator)
-
-    image = output.images[0]
-
-    # Convert spectrogram image back to audio
-    params = SpectrogramParams()
-    converter = SpectrogramImageConverter(params=params)
-
-    segment = converter.audio_from_spectrogram_image( image, apply_filters=True, )
-
-    output_dir = "generated_audio"
-    os.makedirs(output_dir, exist_ok=True)
-    if (name is None): 
-        audio_filename = f"generated_music_{torch.randint(0, int(1e6), (1,)).item()}.wav"
-    else: 
-        audio_filename = f"{name}.wav"
-    audio_path = os.path.join(output_dir, audio_filename)
-    segment.export(audio_path, format="wav")
-    # print(f"Generated audio saved at: {audio_path}")
-
-    del image, segment, output  # Clear memory
-    return audio_path
-
-generate_music = generate_music_riffusion
+generator = MusicGenPipeline(config.music_generator)
+generate_music = lambda **kwargs: generator.generate_music(
+    **kwargs, max_new_tokens=int(DURATION / 5 * 256)
+)
 
 # ------------------------- LLM Query Function ----------------------------
+
 
 def query_llm(prompt: str, temperature=0.5):
     """
     Query the LLM API with the given prompt.
     """
     # print(f"Querying LLM with prompt: '{prompt}'")
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_KEY}"
-    }
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {API_KEY}"}
     data = {
         "model": LLM_MODEL,
         "messages": [
-            {"role": "system", "content": "You produce prompts used to generate music following the requests of the user. You should always respond with only the requested prompts and by encasing each one of the produced prompts in <p> and </p> tags. Like the following: 1. <p> A music prompt. </p> 2. <p> Another music prompt. </p>"},
-            {"role": "user", "content": prompt}
+            {
+                "role": "system",
+                "content": "You produce prompts used to generate music following the requests of the user. You should always respond with only the requested prompts and by encasing each one of the produced prompts in <p> and </p> tags. Like the following: 1. <p> A music prompt. </p> 2. <p> Another music prompt. </p>",
+            },
+            {"role": "user", "content": prompt},
         ],
-        "temperature": temperature
+        "temperature": temperature,
+        "max_tokens": 5000,
     }
     try:
         response = requests.post(LLM_API_URL, headers=headers, data=json.dumps(data))
         response.raise_for_status()
         llm_response = response.json()["choices"][0]["message"]["content"].strip()
         # print(f"LLM responded with: '{llm_response}'")
+        breakpoint()
         return llm_response
     except Exception as e:
         print(f"LLM API request failed: {e}")
         return "A default music prompt."
 
+
 # ------------------------- Evotorch Components ---------------------------
+
 
 class PromptOptimizationProblem(Problem):
     """
     Evotorch Problem for optimizing music prompts or embeddings.
     """
-    def __init__(self, target_embedding, target_embedding_3D, prompt_optim=PROMPT_OPTIM, population_size=POPULATION_SIZE, device=PROBLEM_DEVICE):
-        super().__init__(
-            objective_sense="max",
-            solution_length= 1 if prompt_optim else EMB_SIZE * MAX_SEQ_LEN,
-            initial_bounds=(-1, 1),
-            device=device
-        )
+
+    def __init__(
+        self,
+        target_embedding,
+        target_embedding_3D,
+        target_user=TARGET_USER_ID,
+        prompt_optim=PROMPT_OPTIM,
+        user_optim=USER,
+        population_size=POPULATION_SIZE,
+        device=PROBLEM_DEVICE,
+    ):
+        super().__init__(objective_sense="max", initial_bounds=(-1, 1), device=device, solution_length=1 if prompt_optim else MAX_SEQ_LEN * generator.emb_size)
         self.target_embedding = target_embedding
         self.target_embedding_3D = target_embedding_3D
         self.population_size = population_size
@@ -288,6 +297,8 @@ class PromptOptimizationProblem(Problem):
         self.embeddings_3D = []
         self.prompt_optim = prompt_optim
         self.device_problem = device
+        self.user_optim = user_optim
+        self.target_user = target_user
 
     def _evaluate(self, solution: Solution):
         """
@@ -299,25 +310,42 @@ class PromptOptimizationProblem(Problem):
         if self.prompt_optim:
             # Prompt Optimization Mode
             index = int(solution.values.item())
-            audio_path = generate_music(prompt=self.prompts[index])
+            audio_path = generate_music(
+                inputs=self.prompts[index], name=f"music_intermediate"
+            )
         else:
             # Embedding Optimization Mode
             embedding = solution.values
-            audio_path = generate_music(embeds=embedding)
+            # copy to not be read only
+            embedding = embedding.clone().detach()
+            audio_path = generate_music(inputs=embedding, name=f"music_intermediate")
 
         # Compute the embedding of the generated music
         generated_embedding_full = get_audio_embedding(audio_path)
-        generated_embedding = pca.transform(generated_embedding_full.cpu().numpy().reshape(1, -1))[0]
+        generated_embedding = pca.transform(
+            generated_embedding_full.view(-1).cpu().numpy().reshape(1, -1)
+        )[0]
         generated_embedding = torch.tensor(generated_embedding).to(DEVICE)
 
         # Project into 3D PCA space
-        generated_embedding_3D = pca_3D.transform(generated_embedding_full.cpu().numpy().reshape(1, -1))[0]
+        generated_embedding_3D = pca_3D.transform(
+            generated_embedding_full.view(-1).cpu().numpy().reshape(1, -1)
+        )[0]
         # normalize the embedding
-        generated_embedding_3D = generated_embedding_3D / np.linalg.norm(generated_embedding_3D)
+        generated_embedding_3D = generated_embedding_3D / np.linalg.norm(
+            generated_embedding_3D
+        )
         # Store the 3D embedding for visualization
         self.embeddings_3D.append(generated_embedding_3D)
 
-        similarity = torch.cosine_similarity(self.target_embedding, generated_embedding, dim=0).item()
+        if self.user_optim:
+            # Compute user likeness
+            similarity = get_user_likeness(audio_path, user_idx=self.target_user)
+        else:
+            # Compute similarity to target embedding
+            similarity = torch.cosine_similarity(
+                self.target_embedding, generated_embedding, dim=0
+            ).item()
 
         # print(f"Vector similarity: {similarity}")
         # Clean up generated audio file
@@ -340,14 +368,19 @@ class PromptOptimizationProblem(Problem):
         prompts = []
         population = values.shape[0]
 
-        print(f"Generating diverse prompts for the initial population of {population} solutions...")
+        print(
+            f"Generating diverse prompts for the initial population of {population} solutions..."
+        )
 
         prompt_length = ""
         if not self.prompt_optim:
             prompt_length = f" of maximum {MAX_SEQ_LEN} words each"
 
         while len(prompts) < population:
-            answers = query_llm(f"Generate {population-len(prompts)} diverse prompts for generating music{prompt_length} you should generate higly diverse prompts both in structure and contents, spanning different music styles, instruments, emotions, ...", temperature=TEMPERATURE_GENERATION)
+            answers = query_llm(
+                f"Generate {population-len(prompts)} diverse prompts for generating music{prompt_length} you should generate higly diverse prompts both in structure and contents, spanning different music styles, instruments, emotions, ...",
+                temperature=TEMPERATURE_GENERATION,
+            )
 
             # match the number of <p> and </p> tags if not equal then ignore the prompt
             if answers.count("<p>") != answers.count("</p>"):
@@ -355,35 +388,51 @@ class PromptOptimizationProblem(Problem):
 
             for answer in answers.split("</p>"):
                 if "<p>" in answer:
-                    prompts.append(answer[answer.index("<p>")+3:].strip())
+                    prompts.append(answer[answer.index("<p>") + 3 :].strip())
                 if len(prompts) >= population:
                     break
 
         if self.prompt_optim:
             self.prompts = prompts
-            values.copy_(torch.tensor([i for i in range(population)]).view(-1, 1))
+            values.copy_(
+                torch.tensor([i for i in range(population)])
+                .view(-1, 1)
+                .to(self.device_problem)
+            )
         else:
             # use pipe text_encoder to encode the prompts
-            with torch.no_grad():
-                # set max lenght of the prompt to MAX_SEQ_LEN
-                outputs = pipe.encode_prompt(prompts, device=DEVICE, num_images_per_prompt=1, do_classifier_free_guidance=True)
-                embeddings = outputs[0]
-            values.copy_(embeddings.view(population, -1)[:, :EMB_SIZE * MAX_SEQ_LEN])
-        
+            embeddings = torch.stack(
+                [
+                    generator.text_to_embeddings_before_encoder(
+                        prompts[i], max_length=MAX_SEQ_LEN
+                    )
+                    for i in range(population)
+                ]
+            ).to(self.device_problem)
+            values.copy_(embeddings.view(population, -1))
+            # values.copy_(embeddings.view(population, -1)[:, :EMB_SIZE * MAX_SEQ_LEN])
+
         # del outputs, embeddings
         return values
+
 
 if VISUALIZATION:
     matplotlib.use("TkAgg")
 
+
 class LivePlotter(Logger):
-    def __init__(self, searcher, problem, target_status: str, visualization=VISUALIZATION):
+    def __init__(
+        self, searcher, problem, target_status: str, visualization=VISUALIZATION
+    ):
         # Call the super constructor
         super().__init__(searcher)
         self._searcher = searcher
         self._problem = problem
-        self._target_embedding_3D = problem.target_embedding_3D
-        self._target_embedding_2D = problem.target_embedding_3D[:2] / np.linalg.norm(problem.target_embedding_3D[:2])
+        if not USER:
+            self._target_embedding_3D = problem.target_embedding_3D
+            self._target_embedding_2D = problem.target_embedding_3D[:2] / np.linalg.norm(
+                problem.target_embedding_3D[:2]
+            )
 
         self._visualization = visualization
 
@@ -392,7 +441,9 @@ class LivePlotter(Logger):
 
         if visualization:
             # Create a figure with three subplots: 2D Evolution, 3D Embeddings, and 2D Embeddings
-            self._fig = plt.figure(figsize=(15, 7), dpi=100)  # Increased width to accommodate an extra subplot
+            self._fig = plt.figure(
+                figsize=(15, 7), dpi=100
+            )  # Increased width to accommodate an extra subplot
 
             # 2D Plot for Iteration vs. Fitness
             self._ax2D = self._fig.add_subplot(1, 3, 1)
@@ -401,7 +452,7 @@ class LivePlotter(Logger):
             self._ax2D.set_title("Evolution Progress")
 
             # 3D Plot for Embeddings
-            self._ax3D = self._fig.add_subplot(1, 3, 2, projection='3d')
+            self._ax3D = self._fig.add_subplot(1, 3, 2, projection="3d")
             self._ax3D.set_xlabel("PCA 1")
             self._ax3D.set_ylabel("PCA 2")
             self._ax3D.set_zlabel("PCA 3")
@@ -422,36 +473,50 @@ class LivePlotter(Logger):
 
         if visualization:
             # Plot elements for 3D Embedding Space
-            self.current_population_scatter = self._ax3D.scatter([], [], [], c='blue', label='Current Population', alpha=0.6)
-            self.best_scatter = self._ax3D.scatter([], [], [], c='green', marker='*', s=100, label='Best Solution')
-            self.past_bests_scatter = self._ax3D.scatter([], [], [], c='orange', marker='D', s=50, label='Past Bests')
-            self.target_scatter = self._ax3D.scatter(
-                target_embedding_3D[0],
-                target_embedding_3D[1],
-                target_embedding_3D[2],
-                c='red',
-                marker='X',
-                s=150,
-                label='Target'
+            self.current_population_scatter = self._ax3D.scatter(
+                [], [], [], c="blue", label="Current Population", alpha=0.6
             )
+            self.best_scatter = self._ax3D.scatter(
+                [], [], [], c="green", marker="*", s=100, label="Best Solution"
+            )
+            self.past_bests_scatter = self._ax3D.scatter(
+                [], [], [], c="orange", marker="D", s=50, label="Past Bests"
+            )
+            if not USER:
+                self.target_scatter = self._ax3D.scatter(
+                    target_embedding_3D[0],
+                    target_embedding_3D[1],
+                    target_embedding_3D[2],
+                    c="red",
+                    marker="X",
+                    s=150,
+                    label="Target",
+                )
 
             # NEW: Plot elements for 2D Embedding Space
-            self.current_population_scatter_2D = self._ax2D_emb.scatter([], [], c='blue', label='Current Population', alpha=0.6)
-            self.best_scatter_2D = self._ax2D_emb.scatter([], [], c='green', marker='*', s=100, label='Best Solution')
-            self.past_bests_scatter_2D = self._ax2D_emb.scatter([], [], c='orange', marker='D', s=50, label='Past Bests')
-            self.target_scatter_2D = self._ax2D_emb.scatter(
-                self._target_embedding_2D[0],
-                self._target_embedding_2D[1],
-                c='red',
-                marker='X',
-                s=150,
-                label='Target'
+            self.current_population_scatter_2D = self._ax2D_emb.scatter(
+                [], [], c="blue", label="Current Population", alpha=0.6
             )
+            self.best_scatter_2D = self._ax2D_emb.scatter(
+                [], [], c="green", marker="*", s=100, label="Best Solution"
+            )
+            self.past_bests_scatter_2D = self._ax2D_emb.scatter(
+                [], [], c="orange", marker="D", s=50, label="Past Bests"
+            )
+            if not USER:
+                self.target_scatter_2D = self._ax2D_emb.scatter(
+                    self._target_embedding_2D[0],
+                    self._target_embedding_2D[1],
+                    c="red",
+                    marker="X",
+                    s=150,
+                    label="Target",
+                )
 
             # Legends for both plots
-            self._ax2D.legend(loc='upper right')
-            self._ax3D.legend(loc='upper left')
-            self._ax2D_emb.legend(loc='upper left')  # Add legend for the new 2D plot
+            self._ax2D.legend(loc="upper right")
+            self._ax3D.legend(loc="upper left")
+            self._ax2D_emb.legend(loc="upper left")  # Add legend for the new 2D plot
 
             # Set interactive mode on
             plt.ion()
@@ -471,32 +536,45 @@ class LivePlotter(Logger):
         if self._visualization:
             # Update 2D Evolution Progress Plot
             self._ax2D.clear()
-            self._ax2D.plot(self.iterations, self.fitness_values, label='Current Fitness', color='blue')
-            self._ax2D.plot(self.iterations, self.best_fitness_history, label='Best Fitness', color='green')
+            self._ax2D.plot(
+                self.iterations,
+                self.fitness_values,
+                label="Current Fitness",
+                color="blue",
+            )
+            self._ax2D.plot(
+                self.iterations,
+                self.best_fitness_history,
+                label="Best Fitness",
+                color="green",
+            )
             self._ax2D.set_xlabel("Iteration")
             self._ax2D.set_ylabel(self._target_status)
             self._ax2D.set_title("Evolution Progress")
-            self._ax2D.legend(loc='upper right')
+            self._ax2D.legend(loc="upper right")
             self._ax2D.grid(True)
 
             # Update 3D Embedding Space Plot
             # Clear previous current population scatter
-            if hasattr(self, 'current_population_scatter'):
+            if hasattr(self, "current_population_scatter"):
                 self.current_population_scatter.remove()
 
             # Extract current population embeddings
-            current_population_embeddings = np.array([
-                self._problem.embeddings_3D[i] for i in range(len(self._problem.embeddings_3D))
-            ])
-            
+            current_population_embeddings = np.array(
+                [
+                    self._problem.embeddings_3D[i]
+                    for i in range(len(self._problem.embeddings_3D))
+                ]
+            )
+
             # Scatter current population
             self.current_population_scatter = self._ax3D.scatter(
                 current_population_embeddings[:, 0],
                 current_population_embeddings[:, 1],
                 current_population_embeddings[:, 2],
-                c='blue',
-                label='Current Population',
-                alpha=0.6
+                c="blue",
+                label="Current Population",
+                alpha=0.6,
             )
 
         # Update best solution
@@ -505,9 +583,12 @@ class LivePlotter(Logger):
 
         if self._visualization:
             # Clear previous best and past best scatters
-            if hasattr(self, 'best_scatter'):
+            if hasattr(self, "best_scatter"):
                 self.best_scatter.remove()
-            if hasattr(self, 'past_bests_scatter') and len(self.best_embedding_history) > 1:
+            if (
+                hasattr(self, "past_bests_scatter")
+                and len(self.best_embedding_history) > 1
+            ):
                 self.past_bests_scatter.remove()
 
             # Plot best solution
@@ -515,10 +596,10 @@ class LivePlotter(Logger):
                 best_embedding[0],
                 best_embedding[1],
                 best_embedding[2],
-                c='green',
-                marker='*',
+                c="green",
+                marker="*",
                 s=100,
-                label='Best Solution'
+                label="Best Solution",
             )
 
             # Plot past bests
@@ -528,24 +609,25 @@ class LivePlotter(Logger):
                     history[:, 0],
                     history[:, 1],
                     history[:, 2],
-                    c='orange',
-                    marker='D',
+                    c="orange",
+                    marker="D",
                     s=50,
-                    label='Past Bests'
+                    label="Past Bests",
                 )
             self.best_embedding_history.append(best_embedding)
-            
-            # Re-add target scatter (it doesn't change)
-            self.target_scatter.remove()
-            self.target_scatter = self._ax3D.scatter(
-                self._target_embedding_3D[0],
-                self._target_embedding_3D[1],
-                self._target_embedding_3D[2],
-                c='red',
-                marker='X',
-                s=150,
-                label='Target'
-            )
+
+            if not USER:
+                # Re-add target scatter (it doesn't change)
+                self.target_scatter.remove()
+                self.target_scatter = self._ax3D.scatter(
+                    self._target_embedding_3D[0],
+                    self._target_embedding_3D[1],
+                    self._target_embedding_3D[2],
+                    c="red",
+                    marker="X",
+                    s=150,
+                    label="Target",
+                )
 
             # Adjust the view
             self._ax3D.view_init(elev=30, azim=45)
@@ -562,50 +644,56 @@ class LivePlotter(Logger):
 
             # Update 2D Embedding Space Plot
             current_population_embeddings = current_population_embeddings[:, :2]
-            current_population_embeddings = current_population_embeddings / np.linalg.norm(current_population_embeddings, axis=1)[:, None]
+            current_population_embeddings = (
+                current_population_embeddings
+                / np.linalg.norm(current_population_embeddings, axis=1)[:, None]
+            )
             self._ax2D_emb.clear()
             # Current Population
             self._ax2D_emb.scatter(
                 current_population_embeddings[:, 0],
                 current_population_embeddings[:, 1],
-                c='blue',
-                label='Current Population',
-                alpha=0.6
-            )    
+                c="blue",
+                label="Current Population",
+                alpha=0.6,
+            )
             past_bests = np.array([emb[:2] for emb in self.best_embedding_history])
             past_bests = past_bests / np.linalg.norm(past_bests, axis=1)[:, None]
             # Best Solution
             self._ax2D_emb.scatter(
                 past_bests[-1, 0],
                 past_bests[-1, 1],
-                c='green',
-                marker='*',
+                c="green",
+                marker="*",
                 s=100,
-                label='Best Solution'
+                label="Best Solution",
             )
             # Past Bests
             if len(self.best_embedding_history) > 1:
                 self._ax2D_emb.scatter(
                     past_bests[:-1, 0],
                     past_bests[:-1, 1],
-                    c='orange',
-                    marker='D',
+                    c="orange",
+                    marker="D",
                     s=50,
-                    label='Past Bests'
+                    label="Past Bests",
                 )
-            # Target Embedding
-            self._ax2D_emb.scatter(
-                self._target_embedding_2D[0],
-                self._target_embedding_2D[1],
-                c='red',
-                marker='X',
-                s=150,
-                label='Target'
-            )
+            
+            if not USER:
+                # Target Embedding
+                self._ax2D_emb.scatter(
+                    self._target_embedding_2D[0],
+                    self._target_embedding_2D[1],
+                    c="red",
+                    marker="X",
+                    s=150,
+                    label="Target",
+                )
+
             self._ax2D_emb.set_xlabel("PCA 1")
             self._ax2D_emb.set_ylabel("PCA 2")
             self._ax2D_emb.set_title("2D Embedding Space (PCA1 vs PCA2)")
-            self._ax2D_emb.legend(loc='upper left')
+            self._ax2D_emb.legend(loc="upper left")
             self._ax2D_emb.grid(True)
 
             self._ax2D_emb.set_xlim(-1, 1)
@@ -621,17 +709,25 @@ class LivePlotter(Logger):
         print(f"Iteration: {current_iter} | {self._target_status}: {current_fitness}")
         if self._problem.prompt_optim:
             best = self._searcher._get_best()
-            generate_music(prompt=best, name="best_music")
+            generate_music(inputs=best, name="best_music")
         else:
             best = status["pop_best"].values
-            generate_music(embeds=best, name="best_music")
-
+            generate_music(inputs=best, name="best_music")
 
 
 # ------------------------- Evolutionary Algorithm ------------------------
 
+
 class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
-    def __init__(self, problem:Problem, elites=ELITES, cross_mutation=CROSS_MUTATION, tournament_size=TOURNAMENT_SIZE, novel_prompts = NOVEL_PROMPTS, max_history=MAX_HISTORY):
+    def __init__(
+        self,
+        problem: Problem,
+        elites=ELITES,
+        cross_mutation=CROSS_MUTATION,
+        tournament_size=TOURNAMENT_SIZE,
+        novel_prompts=NOVEL_PROMPTS,
+        max_history=MAX_HISTORY,
+    ):
         SearchAlgorithm.__init__(self, problem)
 
         self._problem = problem
@@ -653,7 +749,7 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
     @property
     def population(self):
         return self._population
-    
+
     def _step(self):
         """Perform a step of the solver"""
         # Evaluate the population
@@ -664,12 +760,18 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         for i in range(len(indices)):
             ranking += f"{i+1}. <p>{self._problem.prompts[indices[i]]}</p> - {self._population[indices[i]].evals.item()*50+50} / 100\n"
 
-        print("Pop Best", indices[0], ":", 
-              self._problem.prompts[indices[0]], 
-              self._population[indices[0]].evals.item()*50+50)
-        self.old_gen.append(f"\t- Generation {self.generations}:<p>{self._problem.prompts[indices[0]]}</p> - {self._population[indices[0]].evals.item()*50+50} / 100\n")
+        print(
+            "Pop Best",
+            indices[0],
+            ":",
+            self._problem.prompts[indices[0]],
+            self._population[indices[0]].evals.item() * 50 + 50,
+        )
+        self.old_gen.append(
+            f"\t- Generation {self.generations}:<p>{self._problem.prompts[indices[0]]}</p> - {self._population[indices[0]].evals.item()*50+50} / 100\n"
+        )
         # keep the dimension contained
-        self.old_gen[:self._max_history]
+        self.old_gen[: self._max_history]
         self.generations += 1
 
         if self._population[indices[0]].evals.item() > self.best_overall_score:
@@ -685,7 +787,7 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         # use random perturbation to generate new solutions using crossover and mutation
         num_simple_mutations = int(self._cross_mutation * self._population_size)
         for i in range(num_simple_mutations):
-            parents = [ random.choice(indices) for _ in range(self._tournament_size) ]
+            parents = [random.choice(indices) for _ in range(self._tournament_size)]
 
             # choose the best parents
             parents.sort(key=lambda x: self._population[x].evals.item())
@@ -705,7 +807,10 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         num_novel = int(self._population_size * self._novel_prompts)
         novel_prompts = []
         while len(novel_prompts) < num_novel:
-            answers = query_llm(f"Generate only {num_novel - len(novel_prompts)} diverse prompts for generating music, they should span multiple generes, moods, ...", temperature=TEMPERATURE_GENERATION)
+            answers = query_llm(
+                f"Generate only {num_novel - len(novel_prompts)} diverse prompts for generating music, they should span multiple generes, moods, ...",
+                temperature=TEMPERATURE_GENERATION,
+            )
 
             # match the number of <p> and </p> tags if not equal then ignore the prompt
             if answers.count("<p>") != answers.count("</p>"):
@@ -713,41 +818,45 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
 
             for answer in answers.split("</p>"):
                 if "<p>" in answer:
-                    novel_prompts.append(answer[answer.index("<p>")+3:].strip())
+                    novel_prompts.append(answer[answer.index("<p>") + 3 :].strip())
                 if len(novel_prompts) >= num_novel:
                     break
-            
+
         new_prompts += novel_prompts
 
-        # Update the population using LLM by giving it the scores of each prompt and asking for new ones
-        while len(new_prompts) < self._population_size:
-            LLM_prompt = f"""Generate {self._population_size-len(new_prompts)} music prompts for generating music based on the classification and scores of the previous prompts. 
-You should balance exploration and exploitation to maximize the score.
-BEFORE giving the music prompts, you should spend time to reason on the classification and scores of the previous prompts, and understand what makes a prompt successful for the user, what makes it fail, how to combine the acquired knowledge and where we are not exploring, for example if a music generne is not being explored or if the prompts are too similar.
-You should also try to understand and reason about the user preferences based on the scores and the classification of the prompts, and how to exploit this knowledge to generate better prompts.
-AFTER this careful reasoning about the current evaluation, you should generate a diverse set of prompts that are likely to be successful tying to not repeat te same patterns and content in the requested format.
+        if PROMPT_OPTIM_STRATEGY == "naive":
+            # Update the population using LLM by giving it the scores of each prompt and asking for new ones
+            while len(new_prompts) < self._population_size:
+                LLM_prompt = f"""Generate {self._population_size-len(new_prompts)} music prompts for generating music based on the classification and scores of the previous prompts. 
+    You should balance exploration and exploitation to maximize the score.
+    BEFORE giving the music prompts, you should spend time to reason on the classification and scores of the previous prompts, and understand what makes a prompt successful for the user, what makes it fail, how to combine the acquired knowledge and where we are not exploring, for example if a music generne is not being explored or if the prompts are too similar.
+    You should also try to understand and reason about the user preferences based on the scores and the classification of the prompts, and how to exploit this knowledge to generate better prompts.
+    AFTER this careful reasoning about the current evaluation, you should generate a diverse set of prompts that are likely to be successful tying to not repeat te same patterns and content in the requested format.
 
-Here is the current population with their similarity scores and ranking for the current generation:
-{ranking}
+    Here is the current population with their similarity scores and ranking for the current generation:
+    {ranking}
 
-And here is the history of the previous best prompts for each generation, you should integrate this knowledge in your reasoning to avoid repeating the same patterns and explore new ones:
-{self.old_gen}
+    after the reasonin, generate only the next generation of prompts with a population of {self._population_size-len(new_prompts)} prompts."""
 
-The best prompt ever found in all generations is the following:
-{self.best_overall} - {self.best_overall_score*50+50} / 100
+                # And here is the history of the previous best prompts for each generation, you should integrate this knowledge in your reasoning to avoid repeating the same patterns and explore new ones:
+                # {self.old_gen}
 
-after the reasonin, generate only the next generation of prompts with a population of {self._population_size-len(new_prompts)} prompts."""
-            answers = query_llm(LLM_prompt, temperature=TEMPERATURE_EVOLVE)
+                # The best prompt ever found in all generations is the following:
+                # {self.best_overall} - {self.best_overall_score*50+50} / 100
+                answers = query_llm(LLM_prompt, temperature=TEMPERATURE_EVOLVE)
 
-            # match the number of <p> and </p> tags if not equal then ignore the prompt
-            if answers.count("<p>") != answers.count("</p>"):
-                continue
+                # match the number of <p> and </p> tags if not equal then ignore the prompt
+                if answers.count("<p>") != answers.count("</p>"):
+                    continue
 
-            for answer in answers.split("</p>"):
-                if "<p>" in answer:
-                    new_prompts.append(answer[answer.index("<p>")+3:].strip())
-                if len(new_prompts) >= self._population_size:
-                    break
+                for answer in answers.split("</p>"):
+                    if "<p>" in answer:
+                        new_prompts.append(answer[answer.index("<p>") + 3 :].strip())
+                    if len(new_prompts) >= self._population_size:
+                        break
+        elif PROMPT_OPTIM_STRATEGY == "breed":
+            raise NotImplementedError("Breed strategy not implemented yet.")            
+        
 
         print("Current Population:\n\t- ", "\n\t- ".join(self._problem.prompts))
         print("New Population:\n\t- ", "\n\t- ".join(new_prompts))
@@ -757,6 +866,7 @@ after the reasonin, generate only the next generation of prompts with a populati
 
     def _get_best(self):
         return self.best
+
 
 def evolve_prompts(problem, generations=NUM_GENERATIONS):
     """
@@ -770,7 +880,13 @@ def evolve_prompts(problem, generations=NUM_GENERATIONS):
         if SEARCHER == "cmaes":
             optimizer = CMAES(problem, stdev_init=1, popsize=POPULATION_SIZE)
         elif SEARCHER == "pgpe":
-            optimizer = PGPE(problem, popsize=POPULATION_SIZE, center_learning_rate=1, stdev_learning_rate=1, stdev_init=1)
+            optimizer = PGPE(
+                problem,
+                popsize=POPULATION_SIZE,
+                center_learning_rate=1,
+                stdev_learning_rate=1,
+                stdev_init=1,
+            )
         elif SEARCHER == "xnes":
             optimizer = XNES(problem, popsize=POPULATION_SIZE, stdev_init=1)
         elif SEARCHER == "snes":
@@ -778,13 +894,15 @@ def evolve_prompts(problem, generations=NUM_GENERATIONS):
         elif SEARCHER == "cem":
             optimizer = CEM(problem, popsize=POPULATION_SIZE, stdev_init=1)
         else:
-            raise ValueError("Invalid searcher specified. Choose between 'cmaes' and 'pgpe'.")
+            raise ValueError(
+                "Invalid searcher specified. Choose between 'cmaes' and 'pgpe'."
+            )
 
     # Run the evolution strategy
     print("Starting evolution...")
     LivePlotter(optimizer, problem, "pop_best_eval")
     optimizer.run(num_generations=generations)
-    
+
     # Get the best solution
     best_fitness = optimizer.status["pop_best_eval"]
     print("\n--- Evolution Complete ---")
@@ -801,11 +919,19 @@ def evolve_prompts(problem, generations=NUM_GENERATIONS):
         print(f"Best Embedding: {best_embedding}")
         return best_embedding, best_fitness
 
+
 # ----------------------------- Main Execution ----------------------------
 
 if __name__ == "__main__":
+    if USER:
+        target_embedding = None
+        target_embedding_3D = None
     # Define the problem
-    problem = PromptOptimizationProblem(target_embedding, target_embedding_3D, prompt_optim=PROMPT_OPTIM)
+    problem = PromptOptimizationProblem(
+        target_embedding, target_embedding_3D, target_user=TARGET_USER_ID,
+        prompt_optim=PROMPT_OPTIM, user_optim=USER,
+        population_size=POPULATION_SIZE, device=PROBLEM_DEVICE
+    )
 
     # Evolve prompts or embeddings
     best_solution, best_fitness = evolve_prompts(problem)
@@ -813,17 +939,17 @@ if __name__ == "__main__":
     # Generate final music using the best prompt or embedding
     print("\nGenerating final music with the best solution...")
     if PROMPT_OPTIM:
-        final_audio_path = generate_music(prompt=best_solution, name="final_music")
+        final_audio_path = generate_music(inputs=best_solution, name="final_music")
     else:
         best_embedding = best_solution.unsqueeze(0)  # Add batch dimension
-        final_audio_path = generate_music(embeds=best_embedding, name="final_music")
+        final_audio_path = generate_music(inputs=best_embedding, name="final_music")
     print(f"Final audio saved at: {final_audio_path}")
 
     # Launch Gradio interface to listen to the generated music
     def listen_to_music(audio_path):
         return audio_path
 
-    if VISUALIZATION:        
+    if VISUALIZATION:
         import gradio as gr
 
         with gr.Blocks() as demo:

@@ -105,3 +105,6 @@ urs_x, embs, _ = align_model(usr_idx, batched_emb)
 
 `N` is the number of songs for every batch, in this case we are only running one batch with one song
 --->
+
+FOR REPRODUCIBILITY IN CUDA: 
+$env:CUBLAS_WORKSPACE_CONFIG=":4096:8"

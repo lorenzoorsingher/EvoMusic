@@ -2,21 +2,21 @@ import math
 import os
 import scipy
 import torch
+from typing import Union
 from diffusers import DiffusionPipeline
 from transformers import AutoProcessor, MusicgenForConditionalGeneration, set_seed
-import sys
 
-sys.path.append("../")
-sys.path.append("./")
+if __name__ == "__main__":
+    import sys
+
+    sys.path.append("./")
+    sys.path.append("../")
+
 import configuration as c
-
-config = c.load_yaml_config("config.yaml")
 
 from riffusion.spectrogram_image_converter import SpectrogramImageConverter
 from riffusion.spectrogram_params import SpectrogramParams
 from diffusers.utils.testing_utils import enable_full_determinism
-
-TEST = "musicgen"  # "riffusion"s
 
 
 def dummy_safety_checker(images, **kwargs):
@@ -71,12 +71,15 @@ class MusicGenerator:
         """
         raise NotImplementedError
 
-    def generate_music(self, embeddings: torch.Tensor, duration: int, **kwargs):
+    def generate_music(
+        self, input: Union[torch.Tensor, str], duration: int, name: str = None, **kwargs
+    ):
         """
-        Generates music from the embeddings
+        Generates music from the input
             Args:
-                embeddings (torch.Tensor): embeddings for the model
+                input (str | torch.Tensor): input for the model
                 duration (int): duration in seconds of the generated audio
+                name (str, optional): name of the generated audio
             Returns:
                 str: system path to the generated audio
         """
@@ -95,7 +98,7 @@ class MusicGenerator:
         """
         raise NotImplementedError
 
-    def transform_inputs(self, inputs: str | torch.Tensor):
+    def transform_inputs(self, inputs: Union[str, torch.Tensor]):
         """
         Transforms the inputs to the embeddings that can be used by the model
             Args:
@@ -104,17 +107,32 @@ class MusicGenerator:
                 torch.Tensor: embeddings for the model
         """
         raise NotImplementedError
-
-    def generate_path(self, exp_name=None):
+    
+    def preprocess_text(self, text: list[str]):
         """
-        Generates the path for the output audio, if exp_name is None, it will use the default experiment name
+        Converts the text to the format that the model can understand
+            Args:
+                text (list[str]): text input
+            Returns:
+                str|torch.Tensor: processed text
+        """
+        if self.config.input_type == "text":
+            return text
+        elif self.config.input_type == "token_embeddings":
+            return torch.stack([self.text_to_embeddings_before_encoder(t) for t in text])
+        elif self.config.input_type == "embeddings":
+            return torch.stack([self.text_to_embed(t) for t in text])
+
+    def generate_path(self, name=None):
+        """
+        Generates the path for the output audio, if name is None, it will use jut the default experiment name
         The number is given based on the number of files in the output directory.
             Args:
-                exp_name (str, optional): name of the file. Defaults to None.
+                name (str, optional): name of the file. Defaults to None.
             Returns:
                 str: system path to the generated audio
         """
-        base_name = self.config.exp_name if exp_name is None else exp_name
+        base_name = self.config.name if name is None else name + "_" + self.config.name
         return os.path.join(
             self.config.output_dir,
             f"{base_name + '_' + str(len(os.listdir(self.config.output_dir)))}.wav",
@@ -190,8 +208,8 @@ class EasyRiffPipeline(MusicGenerator):
                 "input_type must be either 'text', 'token_embedding', or 'embeddings'"
             )
 
-    def generate_music(self, inputs, duration=5, **kwargs):
-        embeddings = self.transform_inputs(inputs)
+    def generate_music(self, input, duration=5, name=None, **kwargs):
+        embeddings = self.transform_inputs(input)
         width = math.ceil(duration * (512 / 5))
         generator = torch.Generator(device=self.model.device)
         generator.manual_seed(0)
@@ -202,7 +220,7 @@ class EasyRiffPipeline(MusicGenerator):
             width=width,
             **kwargs,
         )
-        audio_path = self.generate_path()
+        audio_path = self.generate_path(name)
         image = output.images[0]
         params = SpectrogramParams()
         converter = SpectrogramImageConverter(params=params)
@@ -272,9 +290,9 @@ class MusicGenPipeline(MusicGenerator):
             )
             return {"encoder_outputs": i}
 
-    def generate_music(self, inputs, duration=5, **kwargs):
-        embeddings = self.transform_inputs(inputs)
-        audio_path = self.generate_path()
+    def generate_music(self, input, duration=5, name=None, **kwargs):
+        embeddings = self.transform_inputs(input)
+        audio_path = self.generate_path(name)
         set_seed(0)
         kwargs["max_new_tokens"] = int(duration / 5 * 256)
         audio_values = self.model.generate(
@@ -288,6 +306,9 @@ class MusicGenPipeline(MusicGenerator):
 
 
 if __name__ == "__main__":
+    config = c.load_yaml_config("example_conf/test_music_generation_config.yaml")
+
+    TEST = "musicgen"  # "riffusion"s
 
     output_dir = "generated_audio"
     os.makedirs(output_dir, exist_ok=True)

@@ -1,0 +1,11 @@
+music_generator:
+  model: "facebook/musicgen-small"
+  input_type: "text"
+  output_dir: "generated_audio"
+  name: "default"
+
+riffusion_pipeline:
+  input_type: "text"
+  output_dir: "generated_audio"
+  name: "riffusion_text"
+  inference_steps: 1
