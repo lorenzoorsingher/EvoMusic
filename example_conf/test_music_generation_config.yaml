@@ -8,4 +8,4 @@ riffusion_pipeline:
   input_type: "text"
   output_dir: "generated_audio"
   name: "riffusion_text"
-  inference_steps: 1
+  inference_steps: 50
