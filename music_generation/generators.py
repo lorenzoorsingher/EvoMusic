@@ -6,17 +6,11 @@ from typing import Union
 from diffusers import DiffusionPipeline
 from transformers import AutoProcessor, MusicgenForConditionalGeneration, set_seed
 
-from riffusion.spectrogram_image_converter import SpectrogramImageConverter
-from riffusion.spectrogram_params import SpectrogramParams
 from diffusers.utils.testing_utils import enable_full_determinism
 
-if __name__ == "__main__":
-    import sys
-
-    sys.path.append("./")
-    sys.path.append("../")
-
-import configuration as c
+import EvoMusic.configuration as c
+from riffusion.spectrogram_image_converter import SpectrogramImageConverter
+from riffusion.spectrogram_params import SpectrogramParams
 
 def dummy_safety_checker(images, **kwargs):
     return images, [False] * len(images)
@@ -144,7 +138,6 @@ class EasyRiffPipeline(MusicGenerator):
         self.model = DiffusionPipeline.from_pretrained(self.config.model).to(
             self.config.device
         )
-        self.model.eval()
         self.model.safety_checker = dummy_safety_checker
 
     def text_to_embed(self, text, max_length=None):
@@ -309,7 +302,7 @@ class MusicGenPipeline(MusicGenerator):
 if __name__ == "__main__":
     config = c.load_yaml_config("example_conf/test_music_generation_config.yaml")
 
-    TEST = "musicgen"  # "riffusion"s
+    TEST = "riffusion"  # "riffusion"s
 
     output_dir = "generated_audio"
     os.makedirs(output_dir, exist_ok=True)
@@ -325,7 +318,7 @@ if __name__ == "__main__":
         riffusion_pipe = EasyRiffPipeline(cfg)
         print(riffusion_pipe.model.text_encoder.text_model.config)
         # print(riffusion_pipe.model)
-        print(riffusion_pipe.get_embedding_size(), riffusion_pipe.get_sequence_length())
+        print(riffusion_pipe.get_embedding_size())
         riffusion_pipe.generate_music(txt)
         # ---------------- Test with embeds directly ----------------
         cfg.exp_name = "riffusion_embeds"

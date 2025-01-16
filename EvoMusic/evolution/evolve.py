@@ -1,15 +1,9 @@
 from evotorch.algorithms import CMAES, PGPE, XNES, SNES, CEM
 
-if __name__ == "__main__":
-    import sys
-
-    sys.path.append("./")
-    sys.path.append("../")
-
 from music_generation.generators import MusicGenerator
-from evolution.searchers import PromptSearcher, MusicOptimizationProblem
-from evolution.logger import LivePlotter
-from configuration import evoConf
+from EvoMusic.evolution.searchers import PromptSearcher, MusicOptimizationProblem
+from EvoMusic.evolution.logger import LivePlotter
+from EvoMusic.configuration import evoConf
 
 class MusicEvolver:
     def __init__(self, config: evoConf, music_generator: MusicGenerator):
@@ -109,8 +103,23 @@ class MusicEvolver:
 
 
 if __name__ == "__main__":
-    from configuration import load_yaml_config
+    from diffusers.utils.testing_utils import enable_full_determinism
+    from EvoMusic.configuration import load_yaml_config
     from music_generation.generators import EasyRiffPipeline, MusicGenPipeline
+
+    enable_full_determinism()
+    
+    import torch
+    import numpy as np
+    import random
+    
+    # Set random seed for reproducibility
+    seed = 42
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.cuda.seed_all()
+    
 
     # Load environment variables
     config = load_yaml_config("config.yaml")

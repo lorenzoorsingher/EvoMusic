@@ -10,15 +10,9 @@ from evotorch.algorithms import SearchAlgorithm
 from evotorch.algorithms.searchalgorithm import SinglePopulationAlgorithmMixin
 import torch
 
-if __name__ == "__main__":
-    import sys
-
-    sys.path.append("./")
-    sys.path.append("../")
-
-from evolution.fitness import MusicScorer
+from EvoMusic.evolution.fitness import MusicScorer
 from music_generation.generators import MusicGenerator
-from configuration import LLMConfig, LLMPromptOperator, searchConf, evoConf
+from EvoMusic.configuration import LLMConfig, LLMPromptOperator, searchConf, evoConf
 
 # ------------------------- Evolutionary Algorithm ------------------------
 class LLMPromptGenerator():

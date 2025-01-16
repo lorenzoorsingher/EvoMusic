@@ -4,16 +4,9 @@ import torchaudio
 
 from transformers import AutoModel, Wav2Vec2FeatureExtractor
 
-if __name__ == "__main__":
-    import sys
-
-    sys.path.append("./")
-    sys.path.append("../")
-
-from configuration import ProjectConfig, FitnessConfig
+from EvoMusic.configuration import ProjectConfig, FitnessConfig
 
 from usrembeds.models.model import AlignerV2
-
 
 class MusicScorer:
     """

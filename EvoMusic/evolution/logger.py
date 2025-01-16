@@ -13,15 +13,9 @@ from evotorch import Problem
 from evotorch.algorithms import SearchAlgorithm
 import wandb
 
-if __name__ == "__main__":
-    import sys
-
-    sys.path.append("./")
-    sys.path.append("../")
-
-from configuration import evolutionLogger
+from EvoMusic.configuration import evolutionLogger
 from music_generation.generators import MusicGenerator
-from evolution.searchers import MusicOptimizationProblem
+from EvoMusic.evolution.searchers import MusicOptimizationProblem
 
 class LivePlotter(Logger):
     def __init__(
