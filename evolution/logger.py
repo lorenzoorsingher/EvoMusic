@@ -123,7 +123,6 @@ class LivePlotter(Logger):
         else:   
             print(f"Iteration: {current_iter} | Best Fitness: {best_fitness}")
         
-        best = status["pop_best"].values
         best_audio_path = self.generator.generate_music(
             input=best, 
             name="BestPop" + str(current_iter), 
@@ -131,6 +130,6 @@ class LivePlotter(Logger):
         )
         
         if self.config.wandb:
-            wandb.log({"Best Audio": wandb.Audio(best_audio_path)}, step=current_iter)
+            wandb.log({"Best Audio": wandb.Audio(best_audio_path, caption=best)}, step=current_iter)
         
 
