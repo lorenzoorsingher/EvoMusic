@@ -2,6 +2,7 @@ from evotorch.algorithms import CMAES, PGPE, XNES, SNES, CEM
 
 if __name__ == "__main__":
     import sys
+
     sys.path.append("./")
     sys.path.append("../")
 
@@ -10,80 +11,109 @@ from evolution.searchers import PromptSearcher, MusicOptimizationProblem
 from evolution.logger import LivePlotter
 from configuration import evoConf
 
-def evolve_prompts(config:evoConf, music_generator: MusicGenerator):
-    """
-    Evolve prompts or embeddings to maximize similarity to target embedding using Evotorch's CMA-ES or custom Searcher.
-    """
-    problem = MusicOptimizationProblem(config, music_generator)
-    
-    if problem.text_mode:
-        # Initialize the custom PromptSearcher optimizer
-        optimizer = PromptSearcher(problem, config.search, config.LLM)
-    else:
-        # Initialize the optimizer for embedding optimization
-        if config.search.mode == "CMAES":
-            optimizer = CMAES(problem, stdev_init=1, popsize=config.search.population_size)
-        elif config.search.mode == "PGPE":
-            optimizer = PGPE(
-                problem,
-                popsize=config.search.population_size,
-                center_learning_rate=1,
-                stdev_learning_rate=1,
-                stdev_init=1,
-            )
-        elif config.search.mode == "XNES":
-            optimizer = XNES(problem, popsize=config.search.population_size, stdev_init=1)
-        elif config.search.mode == "SNES":
-            optimizer = SNES(problem, popsize=config.search.population_size, stdev_init=1)
-        elif config.search.mode == "CEM":
-            optimizer = CEM(problem, popsize=config.search.population_size, stdev_init=1)
+class MusicEvolver:
+    def __init__(self, config: evoConf, music_generator: MusicGenerator):
+        self.config = config
+        self.music_generator = music_generator
+
+        self.problem = MusicOptimizationProblem(config, music_generator)
+
+        if self.problem.text_mode:
+            # Initialize the custom PromptSearcher optimizer
+            self.optimizer = PromptSearcher(self.problem, config.search, config.LLM)
         else:
-            raise ValueError(
-                "Invalid searcher specified. Choose between 'CMAES', 'PGPE', 'XNES', 'SNES', 'CEM'."
-            )
+            # Initialize the optimizer for embedding optimization
+            if config.search.mode == "CMAES":
+                self.optimizer = CMAES(
+                    self.problem, stdev_init=1, popsize=config.search.population_size
+                )
+            elif config.search.mode == "PGPE":
+                self.optimizer = PGPE(
+                    self.problem,
+                    popsize=config.search.population_size,
+                    center_learning_rate=1,
+                    stdev_learning_rate=1,
+                    stdev_init=1,
+                )
+            elif config.search.mode == "XNES":
+                self.optimizer = XNES(
+                    self.problem, popsize=config.search.population_size, stdev_init=1
+                )
+            elif config.search.mode == "SNES":
+                self.optimizer = SNES(
+                    self.problem, popsize=config.search.population_size, stdev_init=1
+                )
+            elif config.search.mode == "CEM":
+                self.optimizer = CEM(
+                    self.problem, popsize=config.search.population_size, stdev_init=1
+                )
+            else:
+                raise ValueError(
+                    "Invalid searcher specified. Choose between 'CMAES', 'PGPE', 'XNES', 'SNES', 'CEM'."
+                )
 
-    # Run the evolution strategy
-    print("Starting evolution...")
-    LivePlotter(
-        optimizer, problem, 
-        music_generator,
-        {
-            "search_conf": config.search.__dict__,
-            "fitness_conf": config.fitness.__dict__,
-            "generation_conf": music_generator.config.__dict__,
-            "LLM": {
-                "model": config.LLM.model,
-                "temperature": config.LLM.temperature,
+        # Run the evolution strategy
+        print("Starting evolution...")
+        LivePlotter(
+            self.optimizer,
+            self.problem,
+            music_generator,
+            {
+                "search_conf": config.search.__dict__,
+                "fitness_conf": config.fitness.__dict__,
+                "generation_conf": music_generator.config.__dict__,
+                "LLM": {
+                    "model": config.LLM.model,
+                    "temperature": config.LLM.temperature,
+                },
+                "evotorch": config.evotorch,
             },
-            "evotorch": config.evotorch,
-        },
-        config.logger
-    )
-    optimizer.run(num_generations=config.generations)
+            config.logger,
+        )
+        
+    def evolve(self, n_generations: int=None):
+        """
+        Run the evolution strategy for a specified number of generations
+        
+        Args:
+            n_generations (int): The number of generations to run the evolution for.
+                If None, the number of generations specified in the configuration is used.
+                
+        Returns:
+            dict: A dictionary containing the best solution and the last generation
+                { "best_solution": { "fitness": float, "solution": list }, "last_generation": { "solutions": list, "fitness_values": list } }
+        """
+        if not n_generations:
+            n_generations = self.config.generations
+        self.optimizer.run(num_generations=n_generations)
+        
+        # Get the best solution
+        best_fitness = self.optimizer.status["pop_best_eval"]
+        best_sol = self.optimizer.status["pop_best"].values
+        print("\n--- Evolution Complete ---")
+        
+        last_gen = self.optimizer.population.values
+        last_gen = [last_gen[i] for i in range(len(last_gen))]
+        last_gen_evals = self.optimizer.population.evals.view(-1).tolist()
+        
+        return {
+            "best_solution": {
+                "fitness": best_fitness,
+                "solution": best_sol                  
+            },
+            "last_generation": {
+                "solutions": last_gen,
+                "fitness_values": last_gen_evals
+            }
+        }
 
-    # Get the best solution
-    best_fitness = optimizer.status["pop_best_eval"]
-    print("\n--- Evolution Complete ---")
-    print(f"Best Fitness (Cosine Similarity): {best_fitness}")
 
-    if problem.prompt_optim:
-        # Decode the best solution into a prompt
-        best_prompt = problem.prompts[optimizer.population.evals.argmax()]
-        print(f"Best Prompt: '{best_prompt}'")
-        return best_prompt, best_fitness
-    else:
-        # For embeddings, return the best embedding
-        best_embedding = optimizer.status["pop_best"].values
-        print(f"Best Embedding: {best_embedding}")
-        return best_embedding, best_fitness
-
-
-if __name__ == "__main__":    
+if __name__ == "__main__":
     from configuration import load_yaml_config
     from music_generation.generators import EasyRiffPipeline, MusicGenPipeline
+
     # Load environment variables
     config = load_yaml_config("config.yaml")
-
 
     # ------------------------- Music Generation Setup ------------------------
     if config.music_model == "riffusion":
@@ -91,12 +121,23 @@ if __name__ == "__main__":
     elif config.music_model == "musicgen":
         music_generator = MusicGenPipeline(config.music_generator)
     else:
-        raise ValueError("Invalid music model specified. Choose between 'musicgen' and 'riffusion'.")
+        raise ValueError(
+            "Invalid music model specified. Choose between 'musicgen' and 'riffusion'."
+        )
 
     # Evolve prompts or embeddings
-    best_solution, best_fitness = evolve_prompts(config.evolution, music_generator)
+    evolver = MusicEvolver(config.evolution, music_generator)
+    results = evolver.evolve(n_generations=config.evolution.generations)
 
-    # Generate final music using the best prompt or embedding
-    print("\nGenerating final music with the best solution...")
-    final_audio_path = music_generator.generate_music(inputs=best_solution, name="final_music", duration=config.evolution.duration)
-    print(f"Final audio saved at: {final_audio_path}")
+    # Save the best solution
+    best_sol = results["best_solution"]["solution"]
+    best_fitness = results["best_solution"]["fitness"]
+    
+    best_audio_path = music_generator.generate_music(
+        input=best_sol, 
+        name="BestSolution", 
+        duration=config.evolution.duration
+    )
+    print(f"Best solution saved at: {best_audio_path}")
+    
+    print(f"Best Fitness: {best_fitness}")

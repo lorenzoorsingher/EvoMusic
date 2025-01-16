@@ -67,19 +67,19 @@ after the reasonin, generate only the next generation of prompts with a populati
     # you can create operators that apply multiple opearations at the same time by describing what you want the LLM to do
     # do not use anywhere the <propt> </prompt> tags, as they are used to extract the final output from the LLM
       - name: "cross over"
-        description: "take the two prompts provided and cross them over by mixing components of both"
+        prompt: "take the two prompts provided and cross them over by mixing components of both {prompts}"
         input: 2 # number of parents
         output: 1 # number of children
         probability: 0.5 # the probability of applying the operator
       - name: "change genere"
-        description: "take the prompt and change the genre of the music used"
+        prompt: "take the prompt and change the genre of the music used {prompts}"
         input: 1 # number of parents
         output: 1 # number of children
         probability: 0.5
       - name: "random mutation"
         input: 1 # number of parents
         output: 1 # number of children
-        description: "take the prompt and mutate it, you can choose to mutate any of the words in the prompt"
+        prompt: "take the prompt and mutate it, you can choose to mutate any of the words in the prompt {prompts}"
         probability: 0.5
     
     # evotorch parameters

@@ -100,6 +100,9 @@ class LivePlotter(Logger):
             self._ax2D.set_title("Evolution Progress")
             self._ax2D.legend(loc="upper right")
             self._ax2D.grid(True)
+            
+            # Draw the plot
+            plt.draw()
 
         if self.config.wandb:
             wandb.log({"Best Fitness": best_fitness}, step=current_iter)

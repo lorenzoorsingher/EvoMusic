@@ -95,11 +95,16 @@ class LLMPromptOperator:
     name: str
     input: int # number of individuals to input
     output: int # number of individuals to output
-    description: str
-    probability: float
-    """
-        genetic operator to add to the LLM prompt evolution
-    """
+    prompt: str
+    probability: float # NOTE: when the operator is not applied a random sample is used
+    
+    def __post_init__(self):
+        assert self.input > 0, "Input size must be greater than 0"
+        assert self.output > 0, "Output size must be greater than 0"
+        assert self.probability >= 0 and self.probability <= 1, "Probability must be in the range [0,1]"
+        
+        # if output is greater than input then probability must be 1
+        assert self.output <= self.input or self.probability == 1, "Probability must be 1 when output is greater than input"
 
 @dataclass
 class searchConf:
@@ -131,7 +136,14 @@ class searchConf:
     """
     
     # LLM evolve parameters
-    LLM_genetic_operators: list[LLMPromptOperator] = field(default_factory=list) # genetic operators to use when using the LLM evolve mode
+    LLM_genetic_operators: list[LLMPromptOperator] = field(default_factory=list)
+    """
+        Genetic operators to use when using the LLM evolve mode.
+        You can create operators that apply multiple opearations at the same time by describing what you want the LLM to do.
+        Do not use anywhere the <prompt> </prompt> tags, as they are used to extract the final output from the LLM.
+        You can define where to add the prompts by using {prompts} token.
+        NOTE: the result from the previous operator is passed to the next one, thus they need to have a compatible output and input size
+    """
     tournament_size: int = 2 # size of the tournament for selection
     
     # evotorch parameters
@@ -139,6 +151,21 @@ class searchConf:
     
     def __post_init__(self):
         assert self.mode in ["full LLM", "LLM evolve", "CMAES", "PGPE", "XNES", "SNES", "CEM"], "Invalid search mode"
+        
+        if self.mode == "LLM evolve":
+            # convert list of dict to list of LLMPromptOperator
+            self.LLM_genetic_operators = [LLMPromptOperator(**operator) for operator in self.LLM_genetic_operators]
+            
+            assert self.tournament_size >= self.LLM_genetic_operators[0].input
+            
+            # check operators compatibility
+            output = None
+            for operator in self.LLM_genetic_operators:
+                if output is not None:
+                    assert operator.input == output, f"Operator { operator.name } input size is not compatible with the previous operator output size"
+                output = operator.output
+                
+            assert self.population_size % output == 0, "Population size must be a multiple of the output size of the last operator"
 
 @dataclass
 class evoConf:
