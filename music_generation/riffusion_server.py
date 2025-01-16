@@ -4,11 +4,14 @@ import gradio as gr
 from PIL import Image
 import math
 
-import sys
-sys.path.append("./")
-
 from riffusion.spectrogram_image_converter import SpectrogramImageConverter
 from riffusion.spectrogram_params import SpectrogramParams
+
+if __name__ == "__main__":
+    import sys
+    sys.path.append("./")
+    sys.path.append("../")
+
 
 # Load the Riffusion model pipeline
 model_id = "riffusion/riffusion-model-v1"

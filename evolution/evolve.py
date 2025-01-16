@@ -44,7 +44,21 @@ def evolve_prompts(config:evoConf, music_generator: MusicGenerator):
 
     # Run the evolution strategy
     print("Starting evolution...")
-    LivePlotter(optimizer, problem, "pop_best_eval")
+    LivePlotter(
+        optimizer, problem, 
+        music_generator,
+        {
+            "search_conf": config.search.__dict__,
+            "fitness_conf": config.fitness.__dict__,
+            "generation_conf": music_generator.config.__dict__,
+            "LLM": {
+                "model": config.LLM.model,
+                "temperature": config.LLM.temperature,
+            },
+            "evotorch": config.evotorch,
+        },
+        config.logger
+    )
     optimizer.run(num_generations=config.generations)
 
     # Get the best solution
@@ -68,7 +82,7 @@ if __name__ == "__main__":
     from configuration import load_yaml_config
     from music_generation.generators import EasyRiffPipeline, MusicGenPipeline
     # Load environment variables
-    config = load_yaml_config("config.yaml")
+    config = load_yaml_config("conf.yaml")
 
 
     # ------------------------- Music Generation Setup ------------------------

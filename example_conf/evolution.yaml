@@ -15,6 +15,8 @@ evolution:
   max_seq_len: 5 # maximum number of tokens in the prompt when using mode token or embeddings
   duration: 5 # duration of the generated music in seconds
 
+  device: "cpu"
+
   logger:
     wandb: True # whether to use wandb for logging
     project: "MusicEvo" # wandb project name
@@ -23,7 +25,7 @@ evolution:
 
     visualizations: False # whether to use visualizations
 
-  LLM_config: 
+  LLM: 
     api_key: "API_KEY"
     temperature: 0.7
     model: "gpt-4o-mini"

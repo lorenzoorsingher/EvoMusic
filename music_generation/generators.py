@@ -6,6 +6,10 @@ from typing import Union
 from diffusers import DiffusionPipeline
 from transformers import AutoProcessor, MusicgenForConditionalGeneration, set_seed
 
+from riffusion.spectrogram_image_converter import SpectrogramImageConverter
+from riffusion.spectrogram_params import SpectrogramParams
+from diffusers.utils.testing_utils import enable_full_determinism
+
 if __name__ == "__main__":
     import sys
 
@@ -13,11 +17,6 @@ if __name__ == "__main__":
     sys.path.append("../")
 
 import configuration as c
-
-from riffusion.spectrogram_image_converter import SpectrogramImageConverter
-from riffusion.spectrogram_params import SpectrogramParams
-from diffusers.utils.testing_utils import enable_full_determinism
-
 
 def dummy_safety_checker(images, **kwargs):
     return images, [False] * len(images)
@@ -145,6 +144,7 @@ class EasyRiffPipeline(MusicGenerator):
         self.model = DiffusionPipeline.from_pretrained(self.config.model).to(
             self.config.device
         )
+        self.model.eval()
         self.model.safety_checker = dummy_safety_checker
 
     def text_to_embed(self, text, max_length=None):
@@ -236,6 +236,7 @@ class MusicGenPipeline(MusicGenerator):
         self.model = MusicgenForConditionalGeneration.from_pretrained(
             self.config.model
         ).to(self.config.device)
+        self.model.eval()
 
     def text_to_embed(self, text, max_length=None):
         inputs = self.prepare_inputs(text, max_length)

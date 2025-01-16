@@ -149,6 +149,8 @@ class evoConf:
     max_seq_len: int = 5 # maximum length of the prompt when using the token or embeddings optimization
     duration: int = 5 # duration of the generated music in seconds
     
+    evotorch: dict = field(default_factory=dict) # additional parameters for the evolution algorithm when using evotorch's algorithms
+    
     def __post_init__(self):
         if self.output_dir != "":
             self.output_dir = os.path.expanduser(self.output_dir)
@@ -166,9 +168,6 @@ class ProjectConfig:
     def __post_init__(self):
         assert self.music_model in ["musicgen", "riffusion"], "music_model must be either 'musicgen' or 'riffusion'"
         assert (self.music_model == "musicgen" and self.music_generator is not None) or (self.music_model == "riffusion" and self.riffusion_pipeline is not None), "music_generator or riffusion_pipeline must be defined"
-        
-        if self.music_model:
-            self.music_generator.exp_name
         
         # check consistency of method used for generation and search
         if self.evolution:

@@ -40,7 +40,9 @@ class LivePlotter(Logger):
 
         if self.config.wandb:
             wandb.init(
-                project=self.config.project, name=self.config.name, config=config
+                project=self.config.project, 
+                name=self.config.name, 
+                config=config
             )
 
         self._searcher = searcher

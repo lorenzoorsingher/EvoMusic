@@ -104,7 +104,7 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         self.config = search_config
         self.LLM_model = LLMPromptGenerator(LLM_config)
 
-        # self._population = problem.generate_batch(self._population_size)
+        self._population = problem.generate_batch(self.config.population_size)
 
         self.best = None
         self.generations = 1
@@ -225,7 +225,6 @@ class MusicOptimizationProblem(Problem):
         
         super().__init__(
             objective_sense="max",
-            initial_bounds=(-1, 1),
             device=self.evo_config.device,
             solution_length=
                 None if self.text_mode
@@ -246,39 +245,27 @@ class MusicOptimizationProblem(Problem):
         """
         self.generated += 1
 
-        if self.prompt_optim:
-            # Prompt Optimization Mode
-            index = int(solution.values.item())
-            audio_path = self.music_generator.generate_music(
-                input=self.prompts[index], name=f"music_intermediate"
-            )
-        else:
-            # Embedding Optimization Mode
-            embedding = solution.values
-            # copy to not be read only
-            embedding = embedding.clone().detach()
-            audio_path = self.music_generator.generate_music(input=embedding, name=f"music_intermediate")
+        generator_input = solution.values
+        if not self.text_mode:
+            generator_input = generator_input.clone().detach()
+        audio_path = self.music_generator.generate_music(input=generator_input, name=f"music_intermediate")
 
         # Compute the embedding of the generated music
-        fitness = self.evaluator.compute_fitness([audio_path]).suqeeze()
+        fitness = self.evaluator.compute_fitness([audio_path]).squeeze()
 
         # Clean up generated audio file
         if os.path.exists(audio_path):
             os.remove(audio_path)
             # print(f"Deleted temporary audio file: {audio_path}")
 
-        print(f"Generated: {self.generated} / {self.population_size}")
-        if self.generated >= self.population_size:
+        print(f"Generated: {self.generated} / {self.evo_config.search.population_size}")
+        if self.generated >= self.evo_config.search.population_size:
             self.generated = 0
             print("Finished generation for this population.")
 
-        del generated_embedding
-        torch.cuda.empty_cache()  # Clears the GPU cache
-        gc.collect()  # Forces Python to perform garbage collection
-
         solution.set_evals(fitness)
 
-    def _fill(self, values: torch.Tensor):
+    def _fill(self, values):
         prompts = []
         population = values.shape[0]
 
@@ -291,8 +278,11 @@ class MusicOptimizationProblem(Problem):
 
         processed_prompts = self.music_generator.preprocess_text(prompts)
         
+    
         if self.text_mode:
-            values.copy_(processed_prompts)
+            # values is an object array
+            for i,prompt in enumerate(prompts):
+                values.set_item(i, prompt)
         else:
             values.copy_(processed_prompts.view(population, -1))
             

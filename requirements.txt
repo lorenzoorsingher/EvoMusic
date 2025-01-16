@@ -24,7 +24,8 @@ wandb==0.18.5
 nnAudio == 0.3.3
 pydub
 evotorch
-diffusers
+git+https://github.com/riffusion/riffusion-hobby.git
+diffusers==0.32.2
 transformers==4.47.1
 gradio
 PySoundFile
