@@ -47,6 +47,17 @@ evolution:
     elites : 0.1 # fraction of population to keep from the previous, range [0,1]
     
     # full LLM parameters
+    full_LLM_prompt:
+    "Generate {num_generate} music prompts for generating music based on the classification and scores of the previous prompts. 
+You should balance exploration and exploitation to maximize the score.
+BEFORE giving the music prompts, you should spend time to reason on the classification and scores of the previous prompts, and understand what makes a prompt successful for the user, what makes it fail, how to combine the acquired knowledge and where we are not exploring, for example if a music generne is not being explored or if the prompts are too similar.
+You should also try to understand and reason about the user preferences based on the scores and the classification of the prompts, and how to exploit this knowledge to generate better prompts.
+AFTER this careful reasoning about the current evaluation, you should generate a diverse set of prompts that are likely to be successful tying to not repeat te same patterns and content in the requested format.
+
+Here is the current population with their similarity scores and ranking for the current generation:
+{ranking}
+
+after the reasonin, generate only the next generation of prompts with a population of {num_generate} prompts."
     
     # LLM evolve parameters
     tournament_size: 5 # size of the tournament for selection

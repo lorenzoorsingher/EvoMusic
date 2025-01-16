@@ -122,6 +122,13 @@ class searchConf:
     elites : float = 0 # fraction of population to keep from the previous, range [0,1]
     
     # full LLM parameters
+    full_LLM_prompt: str = ""
+    """
+        Prompt to use when using the full LLM mode
+        You have access to the following special tokens:
+        - {ranking} : the current population rankin with their score
+        - {num_generate}: the number of individuals to generate
+    """
     
     # LLM evolve parameters
     LLM_genetic_operators: list[LLMPromptOperator] = field(default_factory=list) # genetic operators to use when using the LLM evolve mode

@@ -68,7 +68,7 @@ def evolve_prompts(config:evoConf, music_generator: MusicGenerator):
 
     if problem.prompt_optim:
         # Decode the best solution into a prompt
-        best_prompt = problem.prompts[optimizer._population.evals.argmax()]
+        best_prompt = problem.prompts[optimizer.population.evals.argmax()]
         print(f"Best Prompt: '{best_prompt}'")
         return best_prompt, best_fitness
     else:
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     from configuration import load_yaml_config
     from music_generation.generators import EasyRiffPipeline, MusicGenPipeline
     # Load environment variables
-    config = load_yaml_config("conf.yaml")
+    config = load_yaml_config("config.yaml")
 
 
     # ------------------------- Music Generation Setup ------------------------

@@ -104,9 +104,8 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         self.config = search_config
         self.LLM_model = LLMPromptGenerator(LLM_config)
 
-        self._population = problem.generate_batch(self.config.population_size)
+        self._population = None
 
-        self.best = None
         self.generations = 1
 
         SinglePopulationAlgorithmMixin.__init__(self)
@@ -114,6 +113,10 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
     @property
     def population(self):
         return self._population
+
+    @property
+    def problem(self):
+        return self._problem
 
     def get_elites(self) -> list[str]:
         """
@@ -128,18 +131,20 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         if self.config.elites == 0:
             return []
 
-        indices = self._population.argsort()
+        indices = self.population.argsort()
         num_elites = int(self.config.elites * self.config.population_size)
 
         if self.config.sample:
             # sample elites based on their fitness
-            fitness = self._population[indices].evals
+            fitness = self.population[indices].evals
             fitness = fitness - fitness.min() + 1e-6
             fitness = fitness / fitness.sum()
+            fitness = fitness.view(-1).cpu().numpy()
             indices = np.random.choice(indices, num_elites, p=fitness, replace=False)
-            return [self._problem.prompts[indices[i]] for i in range(num_elites)]
         else:
-            return [self._problem.prompts[indices[i]] for i in range(num_elites)]
+            indices = indices[:num_elites]
+        
+        return [self.population.values[i] for i in indices[:num_elites]]
 
     def get_novel_prompts(self) -> list[str]:
         """
@@ -157,14 +162,18 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         return novel_prompts
 
     def full_LLM_step(self):
-        indices = self._population.argsort()
+        indices = self.population.argsort()
+        best_idx = indices[0]
+        pop_values = self.population.values
+        pop_evals = [self.population[i].evals.item() for i in range(len(indices))]
 
         ranking = ""
-        for i in range(len(indices)):
-            ranking += f"{i+1}. {self._problem.prompts[indices[i]]} - {self._population[indices[i]].evals.item()*50+50} / 100\n"
+        for i in indices:
+            # limit to 2 decimal places
+            ranking += f"{i+1}. {pop_values[i]} - {pop_evals[i]*50+50:.2f} / 100\n"
 
-        best = self._problem.prompts[indices[0]]
-        print(f"Population Best: {best} - {self._population[indices[0]].evals.item()*50+50} / 100")
+        best = pop_values[best_idx]
+        print(f"Population Best: {best} - {pop_evals[best_idx]*50+50} / 100")
 
         # elites for exploitation
         new_prompts = self.get_elites()
@@ -173,40 +182,36 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         new_prompts += self.get_novel_prompts()
 
         # Update the population using LLM by giving it the scores of each prompt and asking for new ones
-        while len(new_prompts) < self._population_size:
-            LLM_prompt = f"""Generate {self._population_size-len(new_prompts)} music prompts for generating music based on the classification and scores of the previous prompts. 
-You should balance exploration and exploitation to maximize the score.
-BEFORE giving the music prompts, you should spend time to reason on the classification and scores of the previous prompts, and understand what makes a prompt successful for the user, what makes it fail, how to combine the acquired knowledge and where we are not exploring, for example if a music generne is not being explored or if the prompts are too similar.
-You should also try to understand and reason about the user preferences based on the scores and the classification of the prompts, and how to exploit this knowledge to generate better prompts.
-AFTER this careful reasoning about the current evaluation, you should generate a diverse set of prompts that are likely to be successful tying to not repeat te same patterns and content in the requested format.
-
-Here is the current population with their similarity scores and ranking for the current generation:
-{ranking}
-
-after the reasonin, generate only the next generation of prompts with a population of {self._population_size-len(new_prompts)} prompts."""
+        while len(new_prompts) < self.config.population_size:
+            LLM_prompt = self.config.full_LLM_prompt.format(
+                ranking=ranking, 
+                num_generate=self.config.population_size - len(new_prompts)
+            )
 
             answers = self.LLM_model.query_llm(LLM_prompt)
             generated_prompts = self.LLM_model.parse_llm_response(answers)
-            new_prompts += generated_prompts[: self._population_size - len(new_prompts)]
+            new_prompts += generated_prompts[: self.config.population_size - len(new_prompts)]
             
         # print("Current Population:\n\t- ", "\n\t- ".join(self._problem.prompts))
         # print("New Population:\n\t- ", "\n\t- ".join(new_prompts))
         print("Finished generating new prompts.")
 
         # Update the population
-        self._problem.prompts = new_prompts
+        self._population.set_values(new_prompts)
 
     def _step(self):
         """Perform a step of the solver"""
-        # Evaluate the population
-        self._problem.evaluate(self._population)
-        
-        if self.config.mode == "full LLM":
+        # update the population
+        if self._population is None:
+            self._population = self._problem.generate_batch(self.config.population_size)
+        elif self.config.mode == "full LLM":
             self.full_LLM_step()
         elif self.config.mode == "LLM evolve":
             raise NotImplementedError("LLM evolve mode is not yet implemented")
         else:
             raise ValueError("Invalid search mode")
+        
+        self._problem.evaluate(self.population)
 
 class MusicOptimizationProblem(Problem):
     """

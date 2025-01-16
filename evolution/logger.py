@@ -37,6 +37,9 @@ class LivePlotter(Logger):
 
         self.config = logger_config
         self.generator = music_generator
+        
+        self.searcher = searcher
+        self.problem = problem
 
         if self.config.wandb:
             wandb.init(
@@ -44,9 +47,6 @@ class LivePlotter(Logger):
                 name=self.config.name, 
                 config=config
             )
-
-        self._searcher = searcher
-        self._problem = problem
 
         # Initialize data containers
         self.iterations = []
@@ -79,12 +79,11 @@ class LivePlotter(Logger):
     def _log(self, status: dict):
         # Update iteration and fitness history
         current_iter = status["iter"]
-        current_fitness = status[self._target_status]
         self.iterations.append(current_iter)
-        self.fitness_values.append(current_fitness)
 
         # Update best fitness history
-        best_fitness = max(self.fitness_values)
+        best_fitness = status["pop_best_eval"]
+        best = status["pop_best"].values
         self.best_fitness_history.append(best_fitness)
 
         if self.config.visualizations:
@@ -92,32 +91,46 @@ class LivePlotter(Logger):
             self._ax2D.clear()
             self._ax2D.plot(
                 self.iterations,
-                self.fitness_values,
-                label="Current Fitness",
-                color="blue",
-            )
-            self._ax2D.plot(
-                self.iterations,
                 self.best_fitness_history,
                 label="Best Fitness",
                 color="green",
             )
             self._ax2D.set_xlabel("Iteration")
-            self._ax2D.set_ylabel(self._target_status)
+            self._ax2D.set_ylabel("fitness")
             self._ax2D.set_title("Evolution Progress")
             self._ax2D.legend(loc="upper right")
             self._ax2D.grid(True)
 
         if self.config.wandb:
-            wandb.log({self._target_status: current_fitness}, step=current_iter)
             wandb.log({"Best Fitness": best_fitness}, step=current_iter)
-
-        print(f"Iteration: {current_iter} | {self._target_status}: {current_fitness}")
-        breakpoint()
+            
+            if self.problem.text_mode:
+                # get all the prompts
+                prompts = self.searcher.population.values
+                # convert ObjectArray to string list
+                prompts = [prompt for prompt in prompts]
+                # get all the evaluations
+                evals = self.searcher.population.evals.view(-1).cpu().numpy()
+                
+                # log the prompts and evaluations
+                table = wandb.Table(columns=["Prompt", "Fitness"])
+                for prompt, fitness in zip(prompts, evals):
+                    table.add_data(prompt, fitness)
+                wandb.log({"Prompts Table": table}, step=current_iter)
+                
+        if self.problem.text_mode:
+            print(f"Iteration: {current_iter} | Best Fitness: {best_fitness} | Best Prompt: {best}")
+        else:   
+            print(f"Iteration: {current_iter} | Best Fitness: {best_fitness}")
+        
         best = status["pop_best"].values
-        self.generator.generate_music(
+        best_audio_path = self.generator.generate_music(
             input=best, 
             name="BestPop" + str(current_iter), 
-            duration=self._problem.evo_config.duration
+            duration=self.problem.evo_config.duration
         )
+        
+        if self.config.wandb:
+            wandb.log({"Best Audio": wandb.Audio(best_audio_path)}, step=current_iter)
+        
 
