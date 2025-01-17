@@ -6,7 +6,7 @@ from transformers import AutoModel, Wav2Vec2FeatureExtractor
 
 from EvoMusic.configuration import ProjectConfig, FitnessConfig
 
-from usrembeds.models.model import AlignerV2
+from EvoMusic.user_embs.model import AlignerV2
 
 class MusicScorer:
     """

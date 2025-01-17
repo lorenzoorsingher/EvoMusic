@@ -11,7 +11,7 @@ from evotorch.algorithms.searchalgorithm import SinglePopulationAlgorithmMixin
 import torch
 
 from EvoMusic.evolution.fitness import MusicScorer
-from music_generation.generators import MusicGenerator
+from EvoMusic.music_generation.generators import MusicGenerator
 from EvoMusic.configuration import LLMConfig, LLMPromptOperator, searchConf, evoConf
 
 # ------------------------- Evolutionary Algorithm ------------------------

@@ -1,8 +1,7 @@
 from diffusers.utils.testing_utils import enable_full_determinism
 from EvoMusic.evolution.evolve import MusicEvolver
 from EvoMusic.configuration import load_yaml_config
-from music_generation.generators import EasyRiffPipeline, MusicGenPipeline
-
+from EvoMusic.music_generation.generators import EasyRiffPipeline, MusicGenPipeline
 
 import torch
 import numpy as np

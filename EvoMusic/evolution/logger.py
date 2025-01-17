@@ -14,7 +14,7 @@ from evotorch.algorithms import SearchAlgorithm
 import wandb
 
 from EvoMusic.configuration import evolutionLogger
-from music_generation.generators import MusicGenerator
+from EvoMusic.music_generation.generators import MusicGenerator
 from EvoMusic.evolution.searchers import MusicOptimizationProblem
 
 class LivePlotter(Logger):

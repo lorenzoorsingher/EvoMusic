@@ -1,6 +1,6 @@
 from evotorch.algorithms import CMAES, PGPE, XNES, SNES, CEM
 
-from music_generation.generators import MusicGenerator
+from EvoMusic.music_generation.generators import MusicGenerator
 from EvoMusic.evolution.searchers import PromptSearcher, MusicOptimizationProblem
 from EvoMusic.evolution.logger import LivePlotter
 from EvoMusic.configuration import evoConf
