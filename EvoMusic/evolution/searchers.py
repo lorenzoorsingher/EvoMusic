@@ -411,7 +411,7 @@ class MusicOptimizationProblem(Problem):
         if self.generated >= self.evo_config.search.population_size:
             self.generated = 0
             self.current_time = 0
-            print(f"Finished generation for this population. Total Time: {self.current_time:.2f}s")
+            print(f"\nFinished generation for this population. Total Time: {self.current_time:.2f}s")
 
         solution.set_evals(fitness)
 
