@@ -1,5 +1,6 @@
 import gc
 import os
+import time
 import requests
 import json
 import numpy as np
@@ -181,10 +182,10 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         if n == 0: return []
         
         if sample:
-            # sample the individuals based on their fitness
-            fitness = fitness.view(-1).cpu().numpy()
-            fitness = fitness - fitness.min() + 1e-6
-            fitness = fitness / fitness.sum()
+            # sample the individuals based on their fitness using softmax
+            fitness = fitness.view(-1) / self.config.temperature
+            fitness = torch.softmax(fitness, dim=0)
+            fitness = fitness.cpu().numpy()
             selected_population = np.random.choice(population, n, p=fitness, replace=False).tolist()
         else:
             # select the best individuals
@@ -327,6 +328,9 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         else:
             raise ValueError("Invalid search mode")
         
+        # print new population
+        print("Current Population:\n\t- ", "\n\t- ".join(self._population.values))
+        
         self._problem.evaluate(self.population)
 
 class MusicOptimizationProblem(Problem):
@@ -357,6 +361,9 @@ class MusicOptimizationProblem(Problem):
         self.music_generator = music_generator
         self.LLM_model = LLMPromptGenerator(self.evo_config.LLM)
         
+        self.sample_time = 0 # time taken to generate one sample in the population
+        self.current_time = 0 # time taken to generate the current population
+        
         self.generated = 0
 
     def _evaluate(self, solution: Solution):
@@ -364,6 +371,7 @@ class MusicOptimizationProblem(Problem):
         Objective function that maps solution vectors to prompts or embeddings, generates music,
         computes embeddings, and evaluates similarity to the target embedding.
         """
+        start_time = time.time()
         self.generated += 1
 
         generator_input = solution.values
@@ -379,10 +387,31 @@ class MusicOptimizationProblem(Problem):
             os.remove(audio_path)
             # print(f"Deleted temporary audio file: {audio_path}")
 
-        print(f"Generated: {self.generated} / {self.evo_config.search.population_size}")
+        generation_time = time.time() - start_time
+        if self.sample_time == 0: self.sample_time = generation_time
+        else: self.sample_time = self.sample_time * 0.9 + generation_time * 0.1
+        self.current_time += generation_time
+        time_left = self.sample_time * (self.evo_config.search.population_size - self.generated)
+        total_time = self.current_time + time_left
+        # make into time format so it's easier to read
+        total_time = time.strftime("%H:%M:%S", time.gmtime(total_time))
+        current_time = time.strftime("%H:%M:%S", time.gmtime(self.current_time))
+        
+        bar_length = 30
+        filled_length = int(bar_length * self.generated // self.evo_config.search.population_size)
+        bar = "█" * filled_length + "-" * (bar_length - filled_length)
+        print(
+            f"Generated {self.generated}/{self.evo_config.search.population_size} |{bar}| "
+            f"{(100 * self.generated / self.evo_config.search.population_size):.1f}% "
+            f"~ Fitness {fitness:.2f} "
+            f"~ Progress {current_time} / {total_time} "
+            f"~ Sample Time {generation_time:.2f}s",
+            end="\r"
+        )
         if self.generated >= self.evo_config.search.population_size:
             self.generated = 0
-            print("Finished generation for this population.")
+            self.current_time = 0
+            print(f"Finished generation for this population. Total Time: {self.current_time:.2f}s")
 
         solution.set_evals(fitness)
 

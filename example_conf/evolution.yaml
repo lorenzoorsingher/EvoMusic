@@ -43,6 +43,7 @@ evolution:
     population_size: 50 # size of the population
     
     sample: True # use sampling for all opearations (both selecting individual and applying operators)
+    temperature: 0.2 # temperature to use for the sampling (note: the original values are [-1,1] so we advise lower values)
     novel_prompts: 0.1 # fraction of poupulation to create ex-novo, range [0,1]
     elites : 0.1 # fraction of population to keep from the previous, range [0,1]
     
