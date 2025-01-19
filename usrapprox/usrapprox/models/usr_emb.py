@@ -27,7 +27,7 @@ class UsrEmb(nn.Module):
         self.original_shape = original_shape
 
         # Get the embedding weights from AlignerV2, set the user embedding to the average of the weights
-        self.user = nn.Embedding(1, config.emb_size)
+        self.user = nn.Embedding(1, config.emb_size) # lui e' da trainare
         self.__set_default_embedding(config)
         self.default_embedding = self.user.weight.clone()
         self.last_embedding = self.default_embedding.clone()

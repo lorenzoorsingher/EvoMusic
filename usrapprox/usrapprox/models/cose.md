@@ -1,0 +1,5 @@
+- metodo per fare training
+- metodo per iniettare usr prima del fwd cosi' da tenere il gradiente
+- metodo per fare inference
+- dynamically compute data weights given usr -> per avere dati allineati e fare training con batch da e.g. 5 pos e 5 neg cosi' e' piu' bilanciato
+- prova di training

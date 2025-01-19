@@ -5,7 +5,7 @@ from usrapprox.usrapprox.utils.config import AlignerV2Config
 from usrembeds.models.model import AlignerV2
 
 
-class AlignerWrapper(AlignerV2):
+class AlignerV2Wrapper(AlignerV2):
     """
     This is a wrapper for the AlignerV2 model.
 
@@ -45,11 +45,12 @@ class AlignerWrapper(AlignerV2):
         )
 
         self.to(device)
-
+        super().to(device)
+        
         self.load_state_dict(model_state)
         self.eval()
 
-    def forward(self, idx, music_embs):
+    def forward(self, idx, music_embs, no_expansion=False):
         if self.training:
             raise ValueError(
                 "The model is in training mode but it shouldn't by design!"
@@ -91,6 +92,10 @@ class AlignerWrapper(AlignerV2):
             # --------------------------------------------
 
             music_feedback = torch.cat((pos_feedback_wrt_song, neg_feedback_wrt_song), dim=1)
+            
+            if no_expansion:
+                return user_embedding, music_feedback
+            
             music_feedback_expanded = music_feedback.unsqueeze(-1).unsqueeze(-1)  # Shape: [16, 21, 1, 1]
             music_feedback_expanded = music_feedback_expanded.expand(-1, -1, 13, 1)  # Shape: [16, 21, 13, 768]
 
