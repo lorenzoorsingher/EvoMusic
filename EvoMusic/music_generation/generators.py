@@ -45,12 +45,13 @@ class MusicGenerator:
         """
         raise NotImplementedError
 
-    def text_to_embeddings_before_encoder(self, text: str):
+    def text_to_embeddings_before_encoder(self, text: str, max_length: int = None):
         """
         Takes text and returns the embeddings before the encoder of the model.
         These are usually the token_embeddings from the tokenizer and the first embedding layer of the model.
             Args:
                 text (str): text input
+                max_length (int, optional): max length of the generated sequence. Defaults to None.
             Returns:
                 torch.Tensor: embeddings before the encoder
         """
@@ -100,22 +101,23 @@ class MusicGenerator:
                 torch.Tensor: embeddings for the model
         """
         raise NotImplementedError
-    
-    def preprocess_text(self, text: list[str]):
+
+    def preprocess_text(self, text: list[str], max_length: int = None):
         """
         Converts the text to the format that the model can understand
             Args:
                 text (list[str]): text input
+                max_length (int, optional): max length of the generated sequence. Defaults to None.
             Returns:
                 str|torch.Tensor: processed text
         """
         if self.config.input_type == "text":
             return text
         elif self.config.input_type == "token_embeddings":
-            return torch.stack([self.text_to_embeddings_before_encoder(t) for t in text])
+            return [self.text_to_embeddings_before_encoder(t, max_length).squeeze(0) for t in text]
         elif self.config.input_type == "embeddings":
-            return torch.stack([self.text_to_embed(t) for t in text])
-
+            return [self.text_to_embed(t, max_length).squeeze(0) for t in text]
+        
     def generate_path(self, name=None):
         """
         Generates the path for the output audio, if name is None, it will use jut the default experiment name
@@ -155,8 +157,8 @@ class EasyRiffPipeline(MusicGenerator):
             ).last_hidden_state
             return self.model.text_encoder.text_model.final_layer_norm(encoded)
 
-    def text_to_embeddings_before_encoder(self, text):
-        inputs = self.prepare_inputs(text)
+    def text_to_embeddings_before_encoder(self, text, max_length=None):
+        inputs = self.prepare_inputs(text, max_length)
         with torch.no_grad():
             return self.model.text_encoder.text_model.embeddings(
                 inputs.input_ids.to(self.model.device)

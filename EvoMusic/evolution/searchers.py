@@ -376,7 +376,8 @@ class MusicOptimizationProblem(Problem):
 
         generator_input = solution.values
         if not self.text_mode:
-            generator_input = generator_input.clone().detach()
+            # copy the input to a new tensor as the values are read-only
+            generator_input = solution.values.clone().detach()
         audio_path = self.music_generator.generate_music(input=generator_input, name=f"music_intermediate")
 
         # Compute the embedding of the generated music
@@ -423,10 +424,20 @@ class MusicOptimizationProblem(Problem):
             f"Generating diverse prompts for the initial population of {population} solutions..."
         )
 
-        # Generate diverse prompts for the initial population
-        prompts = self.LLM_model.generate_prompts(population)
+        processed_prompts = []
 
-        processed_prompts = self.music_generator.preprocess_text(prompts)
+        while len(processed_prompts) < population:
+            # Generate diverse prompts for the initial population
+            prompts = self.LLM_model.generate_prompts(population)
+            
+            # if not in text mode, then check if the embeddings are valid
+            if not self.text_mode:
+                processed = self.music_generator.preprocess_text(prompts, self.evo_config.max_seq_len)
+                processed = [prompt for prompt in processed if prompt.shape[0] == self.evo_config.max_seq_len]
+            else:
+                processed = prompts
+            
+            processed_prompts += processed[: population - len(processed_prompts)]
         
     
         if self.text_mode:
@@ -434,6 +445,7 @@ class MusicOptimizationProblem(Problem):
             for i,prompt in enumerate(prompts):
                 values.set_item(i, prompt)
         else:
+            processed_prompts = torch.stack(processed_prompts)
             values.copy_(processed_prompts.view(population, -1))
             
         return values

@@ -78,6 +78,8 @@ class LivePlotter(Logger):
         # Update best fitness history
         best_fitness = status["pop_best_eval"]
         best = status["pop_best"].values
+        if not self.problem.text_mode:
+            best = best.clone().detach()
         self.best_fitness_history.append(best_fitness)
 
         if self.config.visualizations:
@@ -110,10 +112,10 @@ class LivePlotter(Logger):
                 evals = self.searcher.population.evals.view(-1).cpu().numpy()
                 
                 # log the prompts and evaluations
-                table = wandb.Table(columns=["Prompt", "Fitness"])
-                for prompt, fitness in zip(prompts, evals):
-                    table.add_data(prompt, fitness)
-                wandb.log({"Prompts Table": table}, step=current_iter)
+                # table = wandb.Table(columns=["Prompt", "Fitness"])
+                # for prompt, fitness in zip(prompts, evals):
+                #     table.add_data(prompt, fitness)
+                # wandb.log({"Prompts Table": table}, step=current_iter)
                 
         if self.problem.text_mode:
             print(f"Iteration: {current_iter} | Best Fitness: {best_fitness} | Best Prompt: {best}")
