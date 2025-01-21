@@ -47,3 +47,22 @@ def weighted_contrastive_loss(usr_emb, posemb, negemb, weights, loss_weight, tem
     loss = torch.mean(loss)
     return loss
 
+class ScoreToFeedback():
+    def __init__(self, device):
+        num_categories = 3
+
+        # Dislike (-1): [-1, -0.33)
+        # Neutral (0): [-0.33, 0.33)
+        # Like (1): [0.33, 1]
+
+        self.bin_edges = torch.linspace(-1, 1, num_categories + 1).to(device)
+        
+    def get_feedback(self, scores):
+        """
+        
+        """
+        # Map `target_score` to bins [0, num_categories-1]
+        target_labels = torch.bucketize(scores, self.bin_edges, right=True) - 1
+
+        return target_labels
+

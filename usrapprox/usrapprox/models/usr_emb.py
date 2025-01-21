@@ -31,7 +31,8 @@ class UsrEmb(AlignerV2):
             temp=config["temp"],
             drop=config["drop"],
         )
-        self.device = device
+        self._device = device
+        self._default_user_embedding = None
 
         users_embedding = model_state["users.weight"]
 
@@ -45,12 +46,17 @@ class UsrEmb(AlignerV2):
         self.to(device)
 
     def forward(self, batch):
-        index = torch.LongTensor([0 for _ in range(batch.shape[0])]).to(self.device)
-        super().to(self.device)
-        
-        user_embedding, embeddings, _ = super().forward(index, batch)
+        # print(f"user_embedding shape: {self.users.weight.shape}")
+        # exit()
 
-        return user_embedding, embeddings
+        index = torch.LongTensor([0 for _ in range(batch.shape[0])]).to(self._device)
+        super().to(self._device)
+        
+        user_embedding, embeddings, temperature = super().forward(index, batch)
+
+        music_score = self.calculate_score(user_embedding, embeddings)
+
+        return user_embedding, embeddings, temperature, music_score
 
 
     def __set_default_embedding(self, users_embedding: dict) -> None:
@@ -62,8 +68,12 @@ class UsrEmb(AlignerV2):
         Args:
             config (AlignerV2Config): The configuration of the model.
         """
+
         average_user_embedding = users_embedding.mean(dim=0)
 
+
+
+        self._default_user_embedding = average_user_embedding
         self.set_user_embedding(average_user_embedding.unsqueeze(0))
 
     def set_user_embedding(self, user_embedding: torch.Tensor) -> None:
@@ -78,7 +88,8 @@ class UsrEmb(AlignerV2):
         """
         self.users.weight = nn.Parameter(user_embedding)
 
-    def get_user_embedding(self) -> torch.Tensor:
+    @property
+    def get_user_embedding_weights(self) -> torch.Tensor:
         """
         This method is used to get the user embedding of the model.
 
@@ -86,3 +97,9 @@ class UsrEmb(AlignerV2):
             torch.Tensor: The user embedding.
         """
         return self.users.weight.clone()
+    
+    @property
+    def default_user_embedding(self):
+        return self._default_user_embedding
+    
+    

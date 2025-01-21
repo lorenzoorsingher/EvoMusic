@@ -1,0 +1,442 @@
+"""
+Class and methods for user management and training.
+"""
+
+from dataclasses import dataclass
+
+
+import torch
+from torch.utils.data import DataLoader
+from torch.nn import functional as F
+from tqdm import tqdm
+
+from usrapprox.usrapprox.models.aligner_v2 import AlignerV2Wrapper
+from usrapprox.usrapprox.models.probabilistic import probabilistic_model_torch
+from usrapprox.usrapprox.models.usr_emb import UsrEmb
+from usrapprox.usrapprox.utils.config import AlignerV2Config
+from usrapprox.usrapprox.utils.dataset import UserDefinedContrastiveDataset
+from usrapprox.usrapprox.utils.utils import ScoreToFeedback
+
+
+@dataclass
+class UserConfig:
+    user_ids: list[int]
+    memory_length: int
+
+
+@dataclass
+class TrainConfig:
+    splits_path: str = "usrembeds/data/splits.json"
+    embs_path: str = "usrembeds/data/embeddings/embeddings_full_split"
+    npos: int = 4
+    nneg: int = 4
+    batch_size: int = 5
+    num_workers: int = 10
+
+    epochs: int = 10
+
+
+class User:
+    def __init__(
+        self,
+        user_id: int,
+        user_embedding: torch.Tensor,
+        memory_length: int,
+        train_config: TrainConfig = None,
+    ):
+        """
+        This class represents a user. It has its id, it's last updated user_embedding
+        and it automatically stores the last `memory_length` batches in a lifo style.
+        """
+
+        self._user_id = user_id
+        self._user_embedding = user_embedding
+        self._memory_length = memory_length
+        self._memory = []
+        self._train_dataloader = None
+        self._test_dataloader = None
+        self._train_config: TrainConfig = train_config
+
+    def set_train_config(self, train_config: TrainConfig):
+        """
+        This method is used to set the training configuration.
+        """
+        if self._train_config is not None:
+            raise ValueError("Train config already set.")
+        self._train_config = train_config
+
+    def update_user_embedding(self, user_embedding: torch.Tensor):
+        """
+        This method is used to update the user embedding.
+        """
+        self._user_embedding = user_embedding
+
+    def add_to_memory(self, batch: torch.Tensor):
+        """
+        This method is used to add a batch to the memory.
+        """
+        if len(self._memory) == self._memory_length:
+            self._memory.pop(0)
+        self._memory.append(batch)
+
+    def set_dataloaders(
+        self, train_dataloader: DataLoader, test_dataloader: DataLoader
+    ):
+        """
+        This method is used to set the dataloaders.
+        """
+        if self._train_dataloader is not None or self._test_dataloader is not None:
+            raise ValueError("Dataloaders already set.")
+
+        self._train_dataloader = train_dataloader
+        self._test_dataloader = test_dataloader
+
+        print(f"Dataloader1 type: {type(self._train_dataloader)}")
+        print(f"Dataloader2 type: {type(self._test_dataloader)}")
+        print("Dataloaders set.")
+
+    @property
+    def memory(self) -> list[torch.Tensor]:
+        """
+        This method is used to get the memory.
+
+        TODO: Modify this so that it returns a tensor instead of a list.
+        """
+        return self._memory
+
+    @property
+    def user_embedding(self) -> torch.Tensor:
+        """
+        This method is used to get the user embedding.
+        """
+        return self._user_embedding
+
+    @property
+    def user_id(self) -> int:
+        """
+        This method is used to get the user id.
+        """
+        return self._user_id
+
+    @property
+    def train_dataloader(self) -> DataLoader:
+        """
+        This method is used to get the train dataloader.
+        """
+        return self._train_dataloader
+
+    @property
+    def test_dataloader(self) -> DataLoader:
+        """
+        This method is used to get the test dataloader.
+        """
+        return self._test_dataloader
+
+    @property
+    def train_config(self) -> TrainConfig:
+        """
+        This method is used to get the train config.
+        """
+        return self._train_config
+
+
+class UsersManager:
+    def __init__(
+        self,
+        users_config: UserConfig,
+        aligner_config: AlignerV2Config = AlignerV2Config(),
+        device: str = "cuda",
+    ):
+        self.aligner_config = aligner_config
+        self.device = device
+
+        # Create the base UsrEmb model
+        self.usr_emb = UsrEmb(aligner_config, device)
+
+        self._alignerv2 = None
+
+        # Create the users
+        self._users = {
+            user_id: User(
+                user_id,
+                self.usr_emb.get_user_embedding_weights,
+                users_config.memory_length,
+            )
+            for user_id in users_config.user_ids
+        }
+
+        self._last_used_user = None
+        self._score_to_feedback = ScoreToFeedback(self.device)
+
+    # - memoria circolare canzoni x utente
+    # - gestione load/store utente
+    # - metodo per fare finetuning per utente n data una batch nuova
+    # - metodo per avere lo score (cosine) data una batch
+
+    def __adapted_infonce_loss(self, music_score, target_labels, temperature):
+        """
+        Adapted InfoNCE Loss for similarity-based learning.
+        """
+
+        # Compute cosine similarities
+        similarity_matrix = music_score / temperature
+
+        # Create labels for InfoNCE (based on target_labels)
+        # Shift target_labels to [0, num_categories - 1]
+        # target_labels = target_labels.long()
+        positive_mask = (
+            torch.arange(similarity_matrix.size(0), device=self.device)[:, None] == target_labels[None, :]
+        ).float()
+
+        # Compute log-softmax over the similarity matrix
+        log_probs = F.log_softmax(similarity_matrix, dim=-1)
+
+        # Apply loss only to positive pairs
+        loss = -(positive_mask * log_probs).sum(dim=-1).mean()
+        return loss
+
+    def __hybrid_loss(self, music_score, target_labels, temperature):
+        """
+        Hybrid loss for classification and regularization.
+        """
+        # Classification loss (target_labels as categorical labels)
+        classification_loss = F.cross_entropy(music_score, target_labels)
+
+        # Regularization loss (contrastive InfoNCE-like)
+        regularization_loss = -torch.mean(music_score / temperature)
+
+        # Combine losses
+        loss = classification_loss + regularization_loss
+        return loss
+
+    def __set_alignerv2(self):
+        """
+        This method is used to set the alignerv2 model.
+        """
+        if self._alignerv2 is None:
+            self._alignerv2 = AlignerV2Wrapper(self.aligner_config, self.device)
+
+    def __set_model_embedding(self, user: User) -> None:
+        """
+        Set the model embedding to the current user_id embedding.
+
+        This is done only if the user_id is different from the last trained user.
+        """
+        if self._last_used_user is None or self._last_used_user != user.user_id:
+            self._last_used_user = user.user_id
+            user_embedding = user.user_embedding
+            self.usr_emb.set_user_embedding(user_embedding)
+
+    def __update_user_embedding(self, user: User) -> None:
+        user_embedding = self.usr_emb.get_user_embedding_weights
+        user.update_user_embedding(user_embedding)
+
+    def __load_datasets(self, user: User) -> tuple[DataLoader, DataLoader]:
+        """
+        This method is used to load the datasets.
+        """
+        if user.train_dataloader is None and user.test_dataloader is None:
+            train_dataset = UserDefinedContrastiveDataset(
+                alignerV2=self._alignerv2,
+                splits_path=user.train_config.splits_path,
+                embs_path=user.train_config.embs_path,
+                user_id=user.user_id,
+                npos=user.train_config.npos,
+                nneg=user.train_config.nneg,
+                batch_size=user.train_config.batch_size,
+                num_workers=user.train_config.num_workers,
+                partition="train",
+            )
+
+            test_dataset = UserDefinedContrastiveDataset(
+                alignerV2=self._alignerv2,
+                splits_path=user.train_config.splits_path,
+                embs_path=user.train_config.embs_path,
+                user_id=user.user_id,
+                npos=user.train_config.npos,
+                nneg=user.train_config.nneg,
+                batch_size=user.train_config.batch_size,
+                num_workers=user.train_config.num_workers,
+                partition="test",
+            )
+
+            train_dataloader = torch.utils.data.DataLoader(
+                train_dataset,
+                batch_size=user.train_config.batch_size,
+                shuffle=True,
+                num_workers=user.train_config.num_workers,
+            )
+
+            test_dataloader = torch.utils.data.DataLoader(
+                test_dataset,
+                batch_size=user.train_config.batch_size,
+                shuffle=True,
+                num_workers=user.train_config.num_workers,
+            )
+
+            user.set_dataloaders(train_dataloader, test_dataloader)
+
+        return user.train_dataloader, user.test_dataloader
+
+    def __check_user(self, user_id: int) -> None:
+        """
+        This method is used to check if the user is in the users.
+        """
+        if user_id not in self._users:
+            raise ValueError(f"User {user_id} not found.")
+
+    def __get_user(self, user_id: int) -> User:
+        """
+        This method is used to get the user.
+        """
+        self.__check_user(user_id)
+        return self._users[user_id]
+
+    def set_train_config(
+        self, user_id: int, train_config: TrainConfig = TrainConfig()
+    ) -> None:
+        """
+        This method is used to set the training configuration for a user.
+        """
+        user = self.__get_user(user_id)
+        user.set_train_config(train_config)
+
+    def finetune(self):
+        raise NotImplementedError()
+
+    def __train(
+        self, train_loader: DataLoader, optimizer: torch.optim.Optimizer, user: User
+    ):
+        self.usr_emb.train()
+
+        losses = []
+
+        optimizer.zero_grad()
+        for i, (posemb, negemb) in enumerate(tqdm(train_loader, desc="Training")):
+            tracks = torch.cat((posemb, negemb), dim=1)
+            
+            # TODO: add here the memory part
+
+            tracks = tracks.to(self.device)
+
+            _, _, temperature, music_score = self.usr_emb(tracks)
+
+            ids_aligner = torch.LongTensor([user.user_id] * tracks.shape[0]).to(
+                self.device
+            )
+            _, _, _, target_score = self._alignerv2(ids_aligner, tracks)
+
+            # set music_score and target_score to a `human like feedback`
+            # music_feedback = self._score_to_feedback(music_score)
+            target_feedback = self._score_to_feedback.get_feedback(target_score).to(self.device)
+
+            loss = self.__adapted_infonce_loss(
+                music_score, target_feedback, temperature
+            )
+
+            losses.append(loss.item())
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.usr_emb.parameters(), 5)
+
+            optimizer.step()
+
+        return losses
+
+    def __eval(self, val_loader: DataLoader, user: User):
+        self.usr_emb.eval()
+        losses = []
+
+        with torch.no_grad():
+            for i, (posemb, negemb) in enumerate(tqdm(val_loader, desc="Evaluating")):
+                tracks = torch.cat((posemb, negemb), dim=1)
+                tracks = tracks.to(self.device)
+
+                # Get "actions" from usr_emb and aligner
+                _, _, temperature, music_score = self.usr_emb(tracks)
+
+                ids_aligner = torch.LongTensor([user.user_id] * tracks.shape[0]).to(
+                    self.device
+                )
+                _, _, _, target_score = self._alignerv2(ids_aligner, tracks)
+
+                # Calculate loss
+                target_feedback = self._score_to_feedback.get_feedback(target_score)
+                loss = self.__adapted_infonce_loss(
+                    music_score, target_feedback, temperature
+                )
+                losses.append(loss.item())
+
+        # cosine_sim = torch.nn.functional.cosine_similarity(
+        #     self.usr_emb.users, self._alignerv2.users[user.user_id], dim=-1
+        # )
+        # Access the weights of the user embeddings
+        usr_emb_weight = self.usr_emb.users.weight  # Shape: [1, EMB_SIZE]
+        aligner_weight = self._alignerv2.users.weight[user.user_id]  # Shape: [EMB_SIZE]
+
+        # Expand aligner_weight to match the dimensions of usr_emb_weight
+        aligner_weight = aligner_weight.unsqueeze(0)  # Shape: [1, EMB_SIZE]
+
+        # Compute cosine similarity
+        cosine_sim = torch.nn.functional.cosine_similarity(usr_emb_weight, aligner_weight, dim=-1)
+
+
+        average_cosine_similarity_on_model = cosine_sim.mean().item()
+
+        losses = torch.tensor(losses).mean().item()
+
+        print(
+            f"EVAL - Average Cosine Similarity on model: {average_cosine_similarity_on_model}"
+        )
+        print(f"EVAL - Loss: {losses}")
+
+        return average_cosine_similarity_on_model, losses
+
+    def test_training(self, user_id: int):
+        ### load alignerV2Wrapper
+        # Set the alignerv2 if it is not set
+        self.__set_alignerv2()
+
+        ### Get the user
+        user = self.__get_user(user_id)
+
+        # load dataset
+        train_dataloader, test_dataloader = self.__load_datasets(user)
+
+        # load the most recent user embedding for the current user
+        self.__set_model_embedding(user)
+
+        # optimizer
+        optimizer = torch.optim.Adam(self.usr_emb.users.parameters(), lr=0.001)
+
+        # at the end of each epoch update the user embedding
+        for epoch in tqdm(
+            range(user.train_config.epochs), desc=f"Training user {user_id}"
+        ):
+            losses = self.__train(train_dataloader, optimizer, user)
+
+            average_cosine_similarity_on_model, losses = self.__eval(
+                test_dataloader, user
+            )
+
+        # save the user embedding
+        self.__update_user_embedding(user)
+
+    def get_user_score(self, user_id: int, batch: torch.Tensor):
+        """
+        This method is used to get the score of a user given a batch.
+        """
+        self.__check_user(user_id)
+        self.__set_model_embedding(user_id)
+
+        _, _, score = self.usr_emb(batch)
+        normalized_similarities = (score + 1) / 2
+
+        feedback_wrt_song = probabilistic_model_torch(normalized_similarities)
+
+        return feedback_wrt_song
+
+    def save_weights(self):
+        raise NotImplementedError()
+
+    def load_weights(self):
+        raise NotImplementedError()
