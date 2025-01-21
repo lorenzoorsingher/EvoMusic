@@ -19,7 +19,7 @@ class MusicEvolver:
             # Initialize the optimizer for embedding optimization
             if config.search.mode == "CMAES":
                 self.optimizer = CMAES(
-                    self.problem, stdev_init=1, popsize=config.search.population_size
+                    self.problem, stdev_init=2, popsize=config.search.population_size, 
                 )
             elif config.search.mode == "PGPE":
                 self.optimizer = PGPE(
@@ -39,7 +39,7 @@ class MusicEvolver:
                 )
             elif config.search.mode == "CEM":
                 self.optimizer = CEM(
-                    self.problem, popsize=config.search.population_size, stdev_init=1
+                    self.problem, popsize=config.search.population_size, stdev_init=1, parenthood_ratio=0.25
                 )
             else:
                 raise ValueError(
