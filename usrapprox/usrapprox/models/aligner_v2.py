@@ -24,33 +24,32 @@ class AlignerV2Wrapper(AlignerV2):
 
         config = {**config.__dict__, **setup}
 
-        EMB_SIZE = config["emb_size"]
-        TEMP = config["temp"]
-        LT = config["learnable_temp"]
-        PRJ = config["prj"]
-        AGGR = config["aggr"]
-        DROP = config["drop"]
-        MUSIC_EMB_SIZE = config["prj_size"]
-        NUSERS = config["nusers"]
-
         super().__init__(
-            n_users=NUSERS,
-            emb_size=EMB_SIZE,
-            prj_size=MUSIC_EMB_SIZE,
-            prj_type=PRJ,
-            aggragation=AGGR,
-            lt=LT,
-            temp=TEMP,
-            drop=DROP,
+            n_users=config["nusers"],
+            emb_size=config["emb_size"],
+            prj_size=config["prj_size"],
+            prj_type=config["prj"],
+            aggragation=config["aggr"],
+            lt=config["learnable_temp"],
+            temp=config["temp"],
+            drop=config["drop"],
         )
 
         self.to(device)
-        super().to(device)
         
         self.load_state_dict(model_state)
         self.eval()
 
-    def forward(self, idx, music_embs, no_expansion=False):
+    def forward(self, idx, music_embs) -> list[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        This method is used to make predictions.
+
+        Returns:
+        - user_embedding: The user embedding.
+        - embeddings: The embeddings.
+        - music_feedback: The feedback of the music.        
+        """
+        
         if self.training:
             raise ValueError(
                 "The model is in training mode but it shouldn't by design!"
@@ -59,21 +58,13 @@ class AlignerV2Wrapper(AlignerV2):
         with torch.no_grad():
             user_embedding, embeddings, _ = super().forward(idx, music_embs)
 
-            # print(f"Index shape: {idx.shape}")
-            # print(f"Music embeddings shape: {music_embs.shape}")
-
-            # print(f"User embedding shape: {user_embedding.shape}")
-            # print(f"Embeddings shape: {embeddings.shape}")
-
             out = user_embedding.unsqueeze(1)
 
             posemb_out = embeddings[:, 0, :].unsqueeze(dim=1)
             negemb_out = embeddings[:, 1:, :]
 
-            # breakpoint()
             out = user_embedding.unsqueeze(1)
 
-            # breakpoint()
             cos = nn.CosineSimilarity(dim=2, eps=1e-6)
 
             possim = cos(out, posemb_out)  # .squeeze(1).cpu().detach()
@@ -93,11 +84,17 @@ class AlignerV2Wrapper(AlignerV2):
 
             music_feedback = torch.cat((pos_feedback_wrt_song, neg_feedback_wrt_song), dim=1)
             
-            if no_expansion:
-                return user_embedding, music_feedback
             
-            music_feedback_expanded = music_feedback.unsqueeze(-1).unsqueeze(-1)  # Shape: [16, 21, 1, 1]
-            music_feedback_expanded = music_feedback_expanded.expand(-1, -1, 13, 1)  # Shape: [16, 21, 13, 768]
+            # music_feedback_expanded = music_feedback.unsqueeze(-1).unsqueeze(-1)  # Shape: [16, 21, 1, 1]
+            # music_feedback_expanded = music_feedback_expanded.expand(-1, -1, 13, 1)  # Shape: [16, 21, 13, 768]
 
+            """
+            Per fare training e evaluation servono un po' di cose:
+            - user_embedding e embeddings
+                - per calcolare lo score $R in [0,1]$
+                - per l'evaluation
+            - ricordo che la loss e' fatta con contrastive learning
+                - quindi user_embedding e embeddings non servono per la loss
+            """
 
-            return user_embedding, music_feedback_expanded
+            return user_embedding, embeddings, music_feedback

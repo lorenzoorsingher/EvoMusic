@@ -46,3 +46,4 @@ def weighted_contrastive_loss(usr_emb, posemb, negemb, weights, loss_weight, tem
     loss = loss * ((weights * loss_weight) + 1)
     loss = torch.mean(loss)
     return loss
+

@@ -4,7 +4,7 @@ import torch
 # from usrapprox.usrapprox.utils.utils import Categories
 
 
-def calculate_logits(n: torch.Tensor, linear=False):
+def calculate_logits(n: torch.Tensor, linear=False) -> torch.Tensor:
 
     if linear:
         listen_logit = torch.full_like(n, 0.5)  # listen: more likely as n -> 1
@@ -42,7 +42,7 @@ def calculate_logits(n: torch.Tensor, linear=False):
     return result
 
 
-def probabilistic_model_torch(input_values: torch.Tensor, linear=False):
+def probabilistic_model_torch(input_values: torch.Tensor, linear=False) -> torch.Tensor:
     """
     Probabilistic 'model' that maps input values to feedback categories.
 
