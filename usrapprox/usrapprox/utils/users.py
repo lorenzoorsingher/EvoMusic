@@ -3,6 +3,8 @@ Class and methods for user management and training.
 """
 
 from dataclasses import dataclass
+import json
+from torch.utils.tensorboard import SummaryWriter
 
 
 import torch
@@ -15,6 +17,7 @@ from usrapprox.usrapprox.models.probabilistic import probabilistic_model_torch
 from usrapprox.usrapprox.models.usr_emb import UsrEmb
 from usrapprox.usrapprox.utils.config import AlignerV2Config
 from usrapprox.usrapprox.utils.dataset import UserDefinedContrastiveDataset
+from usrapprox.usrapprox.utils.dataset1 import ContrDatasetMERT1
 from usrapprox.usrapprox.utils.utils import ScoreToFeedback
 
 
@@ -28,12 +31,16 @@ class UserConfig:
 class TrainConfig:
     splits_path: str = "usrembeds/data/splits.json"
     embs_path: str = "usrembeds/data/embeddings/embeddings_full_split"
+    stats_path: str = "usrembeds/data/clean_stats.csv"  # used only by ContrDatasetMERT
     npos: int = 4
     nneg: int = 4
-    batch_size: int = 5
+    batch_size: int = 128
     num_workers: int = 10
+    multiplier: int = 50  # used only by ContrDatasetMert
+    type: str = "asd"  # ContrDatasetMERT1 or anything
 
-    epochs: int = 10
+    epochs: int = 20
+    lr: float = 0.001
 
 
 class User:
@@ -91,8 +98,6 @@ class User:
         self._train_dataloader = train_dataloader
         self._test_dataloader = test_dataloader
 
-        print(f"Dataloader1 type: {type(self._train_dataloader)}")
-        print(f"Dataloader2 type: {type(self._test_dataloader)}")
         print("Dataloaders set.")
 
     @property
@@ -144,9 +149,12 @@ class UsersManager:
     def __init__(
         self,
         users_config: UserConfig,
+        writer: SummaryWriter,
         aligner_config: AlignerV2Config = AlignerV2Config(),
         device: str = "cuda",
     ):
+        self.writer = writer
+
         self.aligner_config = aligner_config
         self.device = device
 
@@ -173,41 +181,70 @@ class UsersManager:
     # - metodo per fare finetuning per utente n data una batch nuova
     # - metodo per avere lo score (cosine) data una batch
 
-    def __adapted_infonce_loss(self, music_score, target_labels, temperature):
+    # infonce - nxtent
+
+    def __feedback_loss(self, music_scores, target_feedback, temperature):
         """
-        Adapted InfoNCE Loss for similarity-based learning.
+        Computes the InfoNCE loss.
+
+        Args:
+            music_scores (Tensor): Shape (batch_size, num_songs), raw scores for each song.
+            target_feedback (Tensor): Shape (batch_size, num_songs), values in {-1, 1}.
+            temperature (float): Temperature scaling parameter.
+
+        Returns:
+            Tensor: Scalar loss value.
         """
+        # Mask positive and negative feedback
+        positive_mask = (target_feedback == 1).float()  # Shape (batch_size, num_songs)
+        # negative_mask = (target_feedback == -1).float()  # Shape (batch_size, num_songs)
 
-        # Compute cosine similarities
-        similarity_matrix = music_score / temperature
+        # Scale scores with temperature
+        scaled_scores = music_scores * torch.exp(temperature)
 
-        # Create labels for InfoNCE (based on target_labels)
-        # Shift target_labels to [0, num_categories - 1]
-        # target_labels = target_labels.long()
-        positive_mask = (
-            torch.arange(similarity_matrix.size(0), device=self.device)[:, None] == target_labels[None, :]
-        ).float()
+        # Compute numerator: sum of exponentials of positive scores
+        positive_scores = scaled_scores * positive_mask
+        positive_exp = torch.exp(positive_scores)
+        positive_sum = positive_exp.sum(dim=1)  # Shape (batch_size,)
 
-        # Compute log-softmax over the similarity matrix
-        log_probs = F.log_softmax(similarity_matrix, dim=-1)
+        # Compute denominator: sum of exponentials of all scores (mask ensures only valid feedback)
+        all_mask = (target_feedback != 0).float()  # Mask valid scores
+        all_exp = torch.exp(scaled_scores) * all_mask
+        all_sum = all_exp.sum(dim=1)  # Shape (batch_size,)
 
-        # Apply loss only to positive pairs
-        loss = -(positive_mask * log_probs).sum(dim=-1).mean()
-        return loss
+        # Avoid division by zero with a small epsilon
+        epsilon = 1e-6
 
-    def __hybrid_loss(self, music_score, target_labels, temperature):
-        """
-        Hybrid loss for classification and regularization.
-        """
-        # Classification loss (target_labels as categorical labels)
-        classification_loss = F.cross_entropy(music_score, target_labels)
+        # Compute InfoNCE loss
+        info_nce_loss = -torch.log(
+            (positive_sum + epsilon) / (all_sum + epsilon)
+        ).mean()
 
-        # Regularization loss (contrastive InfoNCE-like)
-        regularization_loss = -torch.mean(music_score / temperature)
+        return info_nce_loss
 
-        # Combine losses
-        loss = classification_loss + regularization_loss
-        return loss
+    # def __feedback_loss(self, music_scores, target_feedback, temperature):
+    #     """
+    #     music_scores: Tensor of shape (batch_size, num_songs)
+    #     target_feedback: Tensor of shape (batch_size, num_songs), values in {-1, 1}
+    #     """
+    #     # Mask neutral feedback (feedback == 0)
+    #     # mask = (target_feedback != 0)  # Ignore neutral feedback
+    #     positive_mask = (target_feedback == 1) # shape (batch_size, 8)
+    #     negative_mask = (target_feedback == -1) # shape (batch_size, 8)
+
+    #     positive_losses = music_scores*positive_mask # multiplied to have shape (batch_size, 8)
+    #     negative_losses = music_scores*negative_mask # multiplied to have shape (batch_size, 8)
+    #     positive_exp = torch.exp(positive_losses)
+    #     negative_exp = torch.exp(negative_losses)
+
+    #     positive = positive_exp.sum(dim=1) + 1e-6
+    #     negative = negative_exp.sum(dim=1) + 1e-6
+
+    #     denom = positive + negative
+
+    #     positive_loss = -torch.log(positive/denom).mean()
+
+    #     return positive_loss
 
     def __set_alignerv2(self):
         """
@@ -236,29 +273,53 @@ class UsersManager:
         This method is used to load the datasets.
         """
         if user.train_dataloader is None and user.test_dataloader is None:
-            train_dataset = UserDefinedContrastiveDataset(
-                alignerV2=self._alignerv2,
-                splits_path=user.train_config.splits_path,
-                embs_path=user.train_config.embs_path,
-                user_id=user.user_id,
-                npos=user.train_config.npos,
-                nneg=user.train_config.nneg,
-                batch_size=user.train_config.batch_size,
-                num_workers=user.train_config.num_workers,
-                partition="train",
-            )
+            if user.train_config.type == "ContrDatasetMERT1":
+                print("Using ContrDatasetMERT1")
+                with open(user.train_config.splits_path, "r") as f:
+                    splits = json.load(f)
 
-            test_dataset = UserDefinedContrastiveDataset(
-                alignerV2=self._alignerv2,
-                splits_path=user.train_config.splits_path,
-                embs_path=user.train_config.embs_path,
-                user_id=user.user_id,
-                npos=user.train_config.npos,
-                nneg=user.train_config.nneg,
-                batch_size=user.train_config.batch_size,
-                num_workers=user.train_config.num_workers,
-                partition="test",
-            )
+                train_dataset = ContrDatasetMERT1(
+                    user.train_config.embs_path,
+                    user.train_config.stats_path,
+                    split=splits["train"],
+                    usrs=user.user_id,
+                    nneg=user.train_config.nneg,
+                    multiplier=user.train_config.multiplier,
+                )
+
+                test_dataset = ContrDatasetMERT1(
+                    user.train_config.embs_path,
+                    user.train_config.stats_path,
+                    split=splits["test"],
+                    usrs=user.user_id,
+                    nneg=user.train_config.nneg,
+                    multiplier=user.train_config.multiplier,
+                )
+            else:
+                print("Using UserDefinedContrastiveDataset")
+                train_dataset = UserDefinedContrastiveDataset(
+                    alignerV2=self._alignerv2,
+                    splits_path=user.train_config.splits_path,
+                    embs_path=user.train_config.embs_path,
+                    user_id=user.user_id,
+                    npos=user.train_config.npos,
+                    nneg=user.train_config.nneg,
+                    batch_size=user.train_config.batch_size,
+                    num_workers=user.train_config.num_workers,
+                    partition="train",
+                )
+
+                test_dataset = UserDefinedContrastiveDataset(
+                    alignerV2=self._alignerv2,
+                    splits_path=user.train_config.splits_path,
+                    embs_path=user.train_config.embs_path,
+                    user_id=user.user_id,
+                    npos=user.train_config.npos,
+                    nneg=user.train_config.nneg,
+                    batch_size=user.train_config.batch_size,
+                    num_workers=user.train_config.num_workers,
+                    partition="test",
+                )
 
             train_dataloader = torch.utils.data.DataLoader(
                 train_dataset,
@@ -301,11 +362,14 @@ class UsersManager:
         user = self.__get_user(user_id)
         user.set_train_config(train_config)
 
+
     def finetune(self):
+        # TODO: add here the memory part
+
         raise NotImplementedError()
 
     def __train(
-        self, train_loader: DataLoader, optimizer: torch.optim.Optimizer, user: User
+        self, train_loader: DataLoader, optimizer: torch.optim.Optimizer, user: User, epoch:int
     ):
         self.usr_emb.train()
 
@@ -314,11 +378,8 @@ class UsersManager:
         optimizer.zero_grad()
         for i, (posemb, negemb) in enumerate(tqdm(train_loader, desc="Training")):
             tracks = torch.cat((posemb, negemb), dim=1)
-            
-            # TODO: add here the memory part
 
             tracks = tracks.to(self.device)
-
             _, _, temperature, music_score = self.usr_emb(tracks)
 
             ids_aligner = torch.LongTensor([user.user_id] * tracks.shape[0]).to(
@@ -326,13 +387,11 @@ class UsersManager:
             )
             _, _, _, target_score = self._alignerv2(ids_aligner, tracks)
 
-            # set music_score and target_score to a `human like feedback`
-            # music_feedback = self._score_to_feedback(music_score)
-            target_feedback = self._score_to_feedback.get_feedback(target_score).to(self.device)
-
-            loss = self.__adapted_infonce_loss(
-                music_score, target_feedback, temperature
+            target_feedback = self._score_to_feedback.get_feedback(target_score).to(
+                self.device
             )
+
+            loss = self.__feedback_loss(music_score, target_feedback, temperature)
 
             losses.append(loss.item())
             loss.backward()
@@ -340,11 +399,15 @@ class UsersManager:
 
             optimizer.step()
 
-        return losses
+        self.writer.add_scalar("Loss/Training", torch.tensor(losses).mean().item(), epoch)
 
-    def __eval(self, val_loader: DataLoader, user: User):
+    def __eval(self, val_loader: DataLoader, user: User, epoch:int):
         self.usr_emb.eval()
         losses = []
+
+        # Define empty torch tensors
+        music_scores = torch.empty(0).to(self.device)
+        target_scores = torch.empty(0).to(self.device)
 
         with torch.no_grad():
             for i, (posemb, negemb) in enumerate(tqdm(val_loader, desc="Evaluating")):
@@ -361,14 +424,12 @@ class UsersManager:
 
                 # Calculate loss
                 target_feedback = self._score_to_feedback.get_feedback(target_score)
-                loss = self.__adapted_infonce_loss(
-                    music_score, target_feedback, temperature
-                )
+                loss = self.__feedback_loss(music_score, target_feedback, temperature)
                 losses.append(loss.item())
 
-        # cosine_sim = torch.nn.functional.cosine_similarity(
-        #     self.usr_emb.users, self._alignerv2.users[user.user_id], dim=-1
-        # )
+                music_scores = torch.cat((music_scores, music_score))
+                target_scores = torch.cat((target_scores, target_score))
+
         # Access the weights of the user embeddings
         usr_emb_weight = self.usr_emb.users.weight  # Shape: [1, EMB_SIZE]
         aligner_weight = self._alignerv2.users.weight[user.user_id]  # Shape: [EMB_SIZE]
@@ -377,19 +438,30 @@ class UsersManager:
         aligner_weight = aligner_weight.unsqueeze(0)  # Shape: [1, EMB_SIZE]
 
         # Compute cosine similarity
-        cosine_sim = torch.nn.functional.cosine_similarity(usr_emb_weight, aligner_weight, dim=-1)
-
+        cosine_sim = torch.nn.functional.cosine_similarity(
+            usr_emb_weight, aligner_weight, dim=-1
+        )
 
         average_cosine_similarity_on_model = cosine_sim.mean().item()
 
         losses = torch.tensor(losses).mean().item()
 
-        print(
-            f"EVAL - Average Cosine Similarity on model: {average_cosine_similarity_on_model}"
-        )
-        print(f"EVAL - Loss: {losses}")
+        mse = torch.nn.functional.cosine_similarity(
+            torch.Tensor(music_scores), torch.Tensor(target_scores)
+        ).mean()
 
-        return average_cosine_similarity_on_model, losses
+        self.writer.add_scalar("Loss/Validation", losses, epoch)
+        self.writer.add_scalar(
+            "Validation/Cosine Model", average_cosine_similarity_on_model, epoch
+        )
+        self.writer.add_scalar("Validation/Cosine Scores", mse, epoch)
+        print("")
+        print("---------------------------")
+        print(f"Music Scores: {music_scores[:1:10]}")
+        print(f"Target Scores: {target_scores[:1:10]}")
+        print(f"target Feedback: {target_feedback[:1:10]}")
+        print("---------------------------")
+        print("")
 
     def test_training(self, user_id: int):
         ### load alignerV2Wrapper
@@ -406,17 +478,17 @@ class UsersManager:
         self.__set_model_embedding(user)
 
         # optimizer
-        optimizer = torch.optim.Adam(self.usr_emb.users.parameters(), lr=0.001)
+        optimizer = torch.optim.AdamW(
+            self.usr_emb.users.parameters(), lr=user.train_config.lr
+        )
 
         # at the end of each epoch update the user embedding
         for epoch in tqdm(
             range(user.train_config.epochs), desc=f"Training user {user_id}"
         ):
-            losses = self.__train(train_dataloader, optimizer, user)
+            self.__train(train_dataloader, optimizer, user, epoch)
 
-            average_cosine_similarity_on_model, losses = self.__eval(
-                test_dataloader, user
-            )
+            self.__eval(test_dataloader, user, epoch)
 
         # save the user embedding
         self.__update_user_embedding(user)
@@ -424,6 +496,7 @@ class UsersManager:
     def get_user_score(self, user_id: int, batch: torch.Tensor):
         """
         This method is used to get the score of a user given a batch.
+        TODO: aggiungere per farlo andare col modello di Lollo
         """
         self.__check_user(user_id)
         self.__set_model_embedding(user_id)

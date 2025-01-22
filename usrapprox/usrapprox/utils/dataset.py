@@ -21,8 +21,8 @@ class AllSongsDataset(Dataset):
         return torch.Tensor([embedding1, embedding2]), index
 
     def __len__(self):
-        return len(self.splits)
-        # return 300
+        # return len(self.splits)
+        return 300
 
     def __get_embedding(self, idx):
         song_id = self.splits[idx]
@@ -127,16 +127,10 @@ class UserDefinedContrastiveDataset(Dataset):
 
         return torch.Tensor(positives), torch.Tensor(negatives)
 
-        # return {
-        #     "positives": torch.Tensor(positives),
-        #     "pos_scores": torch.Tensor(pos_scores),
-        #     "negatives": torch.Tensor(negatives),
-        #     "neg_scores": torch.Tensor(neg_scores),
-        # }
 
     def __len__(self):
-        return len(self.positive_samples) #+ len(self.negative_samples)
-        # return 300
+        # return len(self.positive_samples) #+ len(self.negative_samples)
+        return 300
 
 
     def __get_embedding(self, song_id):

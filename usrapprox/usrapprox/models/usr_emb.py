@@ -70,8 +70,7 @@ class UsrEmb(AlignerV2):
         """
 
         average_user_embedding = users_embedding.mean(dim=0)
-
-
+        # average_user_embedding = users_embedding[0]
 
         self._default_user_embedding = average_user_embedding
         self.set_user_embedding(average_user_embedding.unsqueeze(0))

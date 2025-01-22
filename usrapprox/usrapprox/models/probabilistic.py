@@ -43,6 +43,7 @@ def calculate_logits(n: torch.Tensor, linear=False) -> torch.Tensor:
 
 
 def probabilistic_model_torch(input_values: torch.Tensor, linear=False) -> torch.Tensor:
+    raise NotImplementedError("Deprecated.")
     """
     Probabilistic 'model' that maps input values to feedback categories.
 
