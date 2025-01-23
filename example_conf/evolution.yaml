@@ -14,6 +14,7 @@ evolution:
 
   max_seq_len: 5 # maximum number of tokens in the prompt when using mode token or embeddings
   duration: 5 # duration of the generated music in seconds
+  best_duration: 10 # duration of the best music in seconds
 
   device: "cpu"
 
@@ -35,6 +36,7 @@ evolution:
     mode: "user" # can either be user, music or dynamic
     target_user: 0 # static target user for mode user
     target_music: "" # path to the target music for mode music
+    noise_weight: 0.5 # noise weight for the fitness function
 
   search:
     mode: "LLM evolve" # available modes are full LLM, LLM evolve, CMAES, PGPE, XNES, SNES, CEM
