@@ -355,7 +355,7 @@ class MusicOptimizationProblem(Problem):
             solution_length=
                 None if self.text_mode
                 else self.evo_config.max_seq_len * music_generator.get_embedding_size(),
-            dtype=object if self.text_mode else torch.float16,
+            dtype=object if self.text_mode else torch.float32,
         )
         
         self.evaluator = MusicScorer(self.evo_config.fitness)
