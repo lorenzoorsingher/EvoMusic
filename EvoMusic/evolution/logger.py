@@ -81,6 +81,8 @@ class LivePlotter(Logger):
         if not self.problem.text_mode:
             best = best.clone().detach()
         self.best_fitness_history.append(best_fitness)
+        
+        avg_fitness = status["mean_eval"]
 
         if self.config.visualizations:
             # Update 2D Evolution Progress Plot
@@ -102,6 +104,7 @@ class LivePlotter(Logger):
 
         if self.config.wandb:
             wandb.log({"Best Fitness": best_fitness}, step=current_iter)
+            wandb.log({"Average Fitness": avg_fitness}, step=current_iter)
             
             if self.problem.text_mode:
                 # get all the prompts
@@ -116,11 +119,11 @@ class LivePlotter(Logger):
                 # for prompt, fitness in zip(prompts, evals):
                 #     table.add_data(prompt, fitness)
                 # wandb.log({"Prompts Table": table}, step=current_iter)
-                
+        
         if self.problem.text_mode:
-            print(f"Iteration: {current_iter} | Best Fitness: {best_fitness} | Best Prompt: {best}")
+            print(f"Iteration: {current_iter} | Average Fitness: {avg_fitness} | Best Fitness: {best_fitness} | Best Prompt: {best}")
         else:   
-            print(f"Iteration: {current_iter} | Best Fitness: {best_fitness}")
+            print(f"Iteration: {current_iter} | Average Fitness: {avg_fitness} | Best Fitness: {best_fitness}")
         
         best_audio_path = self.generator.generate_music(
             input=best, 
