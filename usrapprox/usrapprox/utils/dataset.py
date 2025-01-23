@@ -5,6 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 from usrapprox.usrapprox.models.aligner_v2 import AlignerV2Wrapper
+from usrembeds.datautils.dataset import ContrDatasetMERT
 
 
 class AllSongsDataset(Dataset):
@@ -56,8 +57,15 @@ class UserDefinedContrastiveDataset(Dataset):
         batch_size=128,
         num_workers=10,
         partition="train",
+        random_pool=None,
     ):
+        if random_pool != None:
+            assert random_pool < 30, "Random pool must be less than 30"
+            self.random_pool = random_pool
+        
         self.embs_path = embs_path
+        
+        
         with open(splits_path, "r") as f:
             splits = json.load(f)
         self.splits = splits[partition]
@@ -105,23 +113,23 @@ class UserDefinedContrastiveDataset(Dataset):
         assert len(self.negative_samples) >= self.nneg, "Not enough negative samples."
 
         # set two value to randomly n,m with sum up to 30
+        if self.random_pool != None:
+            n,m = 0,0
+            while n+m != 30:
+                n = torch.randint(1, 30, (1,))
+                m = 30 - n
 
-        # n,m = 0,0
-        # while n+m != 30:
-        #     n = torch.randint(1, 30, (1,))
-        #     m = 30 - n
-
-        # pos_samples = torch.randperm(len(self.positive_samples))[: m]
-        # neg_samples = torch.randperm(len(self.negative_samples))[: n]
-
-        pos_samples = torch.randperm(len(self.positive_samples))[: self.npos]
-        neg_samples = torch.randperm(len(self.negative_samples))[: self.nneg]
-        positives = [
-            self.__get_embedding(self.positive_samples[i][0]) for i in pos_samples
-        ]
-        negatives = [
-            self.__get_embedding(self.negative_samples[i][0]) for i in neg_samples
-        ]
+            pos_samples = torch.randperm(len(self.positive_samples))[: m]
+            neg_samples = torch.randperm(len(self.negative_samples))[: n]
+        else:
+            pos_samples = torch.randperm(len(self.positive_samples))[: self.npos]
+            neg_samples = torch.randperm(len(self.negative_samples))[: self.nneg]
+            positives = [
+                self.__get_embedding(self.positive_samples[i][0]) for i in pos_samples
+            ]
+            negatives = [
+                self.__get_embedding(self.negative_samples[i][0]) for i in neg_samples
+            ]
 
         positives = torch.Tensor(positives)
         negatives = torch.Tensor(negatives)
@@ -129,7 +137,6 @@ class UserDefinedContrastiveDataset(Dataset):
         merged = torch.cat((positives, negatives), dim=0)
 
         return merged
-        return torch.Tensor(positives), torch.Tensor(negatives)
 
     def __len__(self):
         return len(self.positive_samples) #+ len(self.negative_samples)
@@ -152,3 +159,70 @@ class UserDefinedContrastiveDataset(Dataset):
         else:
             print("File does not exist")
             return [0.0]
+
+class ContrDatasetWrapper(ContrDatasetMERT):
+    def __init__(
+        self,
+        embs_dir,
+        stats_path,
+        split,
+        usrs,
+        nneg=10,
+        multiplier=10,
+        transform=None,
+        preload=False,  # New parameter for preloading
+        max_workers=12,
+    ):
+        self.embs_dir = embs_dir
+        self.stats_path = stats_path
+        self.nneg = nneg
+        self.multiplier = multiplier
+        self.transform = transform
+        self.preload = preload  # Store the preload flag
+        self.max_workers = max_workers  # Number of threads
+
+        print("[DATASET] Creating dataset")
+
+        # Set embedding keys from the split
+        self.emb_keys = split
+
+        # Load the stats
+        self.stats = pd.read_csv(stats_path)
+        self.stats["count"] = self.stats["count"].astype(int)
+
+        # Remove entries with no embeddings
+        self.stats = self.stats[self.stats["id"].isin(self.emb_keys)].reset_index(
+            drop=True
+        )
+
+        # Remove users not in the split
+        # self.stats = self.stats[self.stats["userid"].isin(usrs)]
+        self.stats = self.stats[
+            self.stats["userid"] == self.stats["userid"].iloc[usrs]
+        ]
+
+        self.idx2usr = self.stats["userid"].unique().tolist()
+
+        # Compute user stats
+        self.usersums = self.stats.groupby("userid")["count"].sum()
+        self.userstd = self.stats.groupby("userid")["count"].std()
+        self.usercount = self.stats.groupby("userid")["count"].count()
+
+        self.user2songs = (
+            self.stats.groupby("userid")
+            .apply(lambda x: list(zip(x["id"], x["count"])))
+            .to_dict()
+        )
+
+        # Number of users
+        self.nusers = self.stats["userid"].nunique()
+
+        # Preload embeddings into memory if preload=True
+        if self.preload:
+            print("[DATASET] Preloading embeddings into RAM using multi-threading")
+            self._preload_embeddings()
+
+    def __getitem__(self, idx):
+        _, posemb, negemb, _ = super().__getitem__(idx)
+
+        return torch.cat((posemb, negemb), dim=0)

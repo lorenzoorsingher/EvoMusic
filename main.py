@@ -1,4 +1,5 @@
-from usrapprox.usrapprox.utils.users import TrainConfig, UserConfig, UsersManager
+from usrapprox.usrapprox.utils.config import TrainConfig, UserConfig
+from usrapprox.usrapprox.utils.user_manager import UsersTrainManager
 
 import torch
 
@@ -20,10 +21,11 @@ if __name__ == "__main__":
         npos=15,
         nneg=15,
         epochs=10,
-        num_workers=6
+        num_workers=6,
+        type="ContrDatasetMERT",
     )
 
-    manager = UsersManager(users, writer=writer)
+    manager = UsersTrainManager(users, writer=writer)
 
     manager.set_train_config(user, user_train_config)
 

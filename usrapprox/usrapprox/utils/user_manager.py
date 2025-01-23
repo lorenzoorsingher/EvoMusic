@@ -13,34 +13,13 @@ from torch.nn import functional as F
 from tqdm import tqdm
 
 from usrapprox.usrapprox.models.aligner_v2 import AlignerV2Wrapper
-from usrapprox.usrapprox.models.probabilistic import probabilistic_model_torch
+# from usrapprox.usrapprox.models.probabilistic import probabilistic_model_torch
 from usrapprox.usrapprox.models.usr_emb import UsrEmb
-from usrapprox.usrapprox.utils.config import AlignerV2Config
-from usrapprox.usrapprox.utils.dataset import UserDefinedContrastiveDataset
-from usrapprox.usrapprox.utils.dataset1 import ContrDatasetMERT1
+from usrapprox.usrapprox.utils.config import AlignerV2Config, UserConfig, TrainConfig
+from usrapprox.usrapprox.utils.dataset import UserDefinedContrastiveDataset, ContrDatasetWrapper
 from usrapprox.usrapprox.utils.utils import ScoreToFeedback
 
 
-@dataclass
-class UserConfig:
-    user_ids: list[int]
-    memory_length: int
-
-
-@dataclass
-class TrainConfig:
-    splits_path: str = "usrembeds/data/splits.json"
-    embs_path: str = "usrembeds/data/embeddings/embeddings_full_split"
-    stats_path: str = "usrembeds/data/clean_stats.csv"  # used only by ContrDatasetMERT
-    npos: int = 4
-    nneg: int = 4
-    batch_size: int = 128
-    num_workers: int = 10
-    multiplier: int = 50  # used only by ContrDatasetMert
-    type: str = "asd"  # ContrDatasetMERT1 or anything
-
-    epochs: int = 20
-    lr: float = 0.001
 
 
 class User:
@@ -145,7 +124,7 @@ class User:
         return self._train_config
 
 
-class UsersManager:
+class UsersTrainManager:
     def __init__(
         self,
         users_config: UserConfig,
@@ -249,12 +228,12 @@ class UsersManager:
         This method is used to load the datasets.
         """
         if user.train_dataloader is None and user.test_dataloader is None:
-            if user.train_config.type == "ContrDatasetMERT1":
-                print("Using ContrDatasetMERT1")
+            if user.train_config.type == "ContrDatasetMERT":
+                print("Using ContrDatasetMERT")
                 with open(user.train_config.splits_path, "r") as f:
                     splits = json.load(f)
 
-                train_dataset = ContrDatasetMERT1(
+                train_dataset = ContrDatasetWrapper(
                     user.train_config.embs_path,
                     user.train_config.stats_path,
                     split=splits["train"],
@@ -263,7 +242,7 @@ class UsersManager:
                     multiplier=user.train_config.multiplier,
                 )
 
-                test_dataset = ContrDatasetMERT1(
+                test_dataset = ContrDatasetWrapper(
                     user.train_config.embs_path,
                     user.train_config.stats_path,
                     split=splits["test"],

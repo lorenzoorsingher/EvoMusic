@@ -20,3 +20,23 @@ class AlignerV2Config:
     encoder: str = "MERT"
     abs_file_path: str = "usrembeds/checkpoints/run_20241227_151619_best.pt" 
     
+@dataclass
+class UserConfig:
+    user_ids: list[int]
+    memory_length: int
+    init: str = "mean" # "random" or "mean" or "rmean"
+
+@dataclass
+class TrainConfig:
+    splits_path: str = "usrembeds/data/splits.json"
+    embs_path: str = "usrembeds/data/embeddings/embeddings_full_split"
+    stats_path: str = "usrembeds/data/clean_stats.csv"  # used only by ContrDatasetMERT
+    npos: int = 4
+    nneg: int = 4
+    batch_size: int = 128
+    num_workers: int = 10
+    multiplier: int = 50  # used only by ContrDatasetMert
+    type: str = "asd"  # ContrDatasetMERT or anything
+
+    epochs: int = 20
+    lr: float = 0.001
