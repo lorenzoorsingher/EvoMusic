@@ -4,7 +4,7 @@ import torch
 
 # seed and deterministic
 torch.manual_seed(0)
-torch.backends.cudnn.deterministic = True
+# torch.backends.cudnn.deterministic = True
 
 # set tensorboard
 from torch.utils.tensorboard import SummaryWriter
@@ -16,10 +16,11 @@ if __name__ == "__main__":
 
     users = UserConfig(user_ids=[user], memory_length=5)
     user_train_config = TrainConfig(
-        batch_size=128,
-        npos=5,
-        nneg=5,
-        epochs=50,
+        batch_size=30,
+        npos=15,
+        nneg=15,
+        epochs=10,
+        num_workers=6
     )
 
     manager = UsersManager(users, writer=writer)

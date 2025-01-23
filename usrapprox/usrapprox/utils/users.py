@@ -203,8 +203,8 @@ class UsersManager:
         scaled_scores = music_scores * torch.exp(temperature)
 
         # Compute numerator: sum of exponentials of positive scores
-        positive_scores = scaled_scores * positive_mask
-        positive_exp = torch.exp(positive_scores)
+        # positive_scores = scaled_scores
+        positive_exp = torch.exp(scaled_scores) * positive_mask
         positive_sum = positive_exp.sum(dim=1)  # Shape (batch_size,)
 
         # Compute denominator: sum of exponentials of all scores (mask ensures only valid feedback)
@@ -221,30 +221,6 @@ class UsersManager:
         ).mean()
 
         return info_nce_loss
-
-    # def __feedback_loss(self, music_scores, target_feedback, temperature):
-    #     """
-    #     music_scores: Tensor of shape (batch_size, num_songs)
-    #     target_feedback: Tensor of shape (batch_size, num_songs), values in {-1, 1}
-    #     """
-    #     # Mask neutral feedback (feedback == 0)
-    #     # mask = (target_feedback != 0)  # Ignore neutral feedback
-    #     positive_mask = (target_feedback == 1) # shape (batch_size, 8)
-    #     negative_mask = (target_feedback == -1) # shape (batch_size, 8)
-
-    #     positive_losses = music_scores*positive_mask # multiplied to have shape (batch_size, 8)
-    #     negative_losses = music_scores*negative_mask # multiplied to have shape (batch_size, 8)
-    #     positive_exp = torch.exp(positive_losses)
-    #     negative_exp = torch.exp(negative_losses)
-
-    #     positive = positive_exp.sum(dim=1) + 1e-6
-    #     negative = negative_exp.sum(dim=1) + 1e-6
-
-    #     denom = positive + negative
-
-    #     positive_loss = -torch.log(positive/denom).mean()
-
-    #     return positive_loss
 
     def __set_alignerv2(self):
         """
@@ -362,22 +338,25 @@ class UsersManager:
         user = self.__get_user(user_id)
         user.set_train_config(train_config)
 
-
     def finetune(self):
         # TODO: add here the memory part
 
         raise NotImplementedError()
 
     def __train(
-        self, train_loader: DataLoader, optimizer: torch.optim.Optimizer, user: User, epoch:int
+        self,
+        train_loader: DataLoader,
+        optimizer: torch.optim.Optimizer,
+        user: User,
+        epoch: int,
     ):
-        self.usr_emb.train()
+        self.usr_emb.eval()
+        # self.usr_emb.users.train()
 
         losses = []
 
-        optimizer.zero_grad()
-        for i, (posemb, negemb) in enumerate(tqdm(train_loader, desc="Training")):
-            tracks = torch.cat((posemb, negemb), dim=1)
+        for i, (tracks) in enumerate(tqdm(train_loader, desc="Training", leave=False)):
+            # tracks = torch.cat((posemb, negemb), dim=1)
 
             tracks = tracks.to(self.device)
             _, _, temperature, music_score = self.usr_emb(tracks)
@@ -394,14 +373,17 @@ class UsersManager:
             loss = self.__feedback_loss(music_score, target_feedback, temperature)
 
             losses.append(loss.item())
+
+            optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.usr_emb.parameters(), 5)
-
             optimizer.step()
 
-        self.writer.add_scalar("Loss/Training", torch.tensor(losses).mean().item(), epoch)
+        self.writer.add_scalar(
+            "Loss/Training", torch.tensor(losses).mean().item(), epoch
+        )
 
-    def __eval(self, val_loader: DataLoader, user: User, epoch:int):
+    def __eval(self, val_loader: DataLoader, user: User, epoch: int):
         self.usr_emb.eval()
         losses = []
 
@@ -410,8 +392,10 @@ class UsersManager:
         target_scores = torch.empty(0).to(self.device)
 
         with torch.no_grad():
-            for i, (posemb, negemb) in enumerate(tqdm(val_loader, desc="Evaluating")):
-                tracks = torch.cat((posemb, negemb), dim=1)
+            for i, (tracks) in enumerate(
+                tqdm(val_loader, desc="Evaluating", leave=False)
+            ):
+                # tracks = torch.cat((posemb, negemb), dim=1)
                 tracks = tracks.to(self.device)
 
                 # Get "actions" from usr_emb and aligner
@@ -455,13 +439,6 @@ class UsersManager:
             "Validation/Cosine Model", average_cosine_similarity_on_model, epoch
         )
         self.writer.add_scalar("Validation/Cosine Scores", mse, epoch)
-        print("")
-        print("---------------------------")
-        print(f"Music Scores: {music_scores[:1:10]}")
-        print(f"Target Scores: {target_scores[:1:10]}")
-        print(f"target Feedback: {target_feedback[:1:10]}")
-        print("---------------------------")
-        print("")
 
     def test_training(self, user_id: int):
         ### load alignerV2Wrapper
@@ -484,7 +461,8 @@ class UsersManager:
 
         # at the end of each epoch update the user embedding
         for epoch in tqdm(
-            range(user.train_config.epochs), desc=f"Training user {user_id}"
+            range(user.train_config.epochs),
+            desc=f"Training user {user_id}",
         ):
             self.__train(train_dataloader, optimizer, user, epoch)
 

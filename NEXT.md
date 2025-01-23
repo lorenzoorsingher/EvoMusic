@@ -1,0 +1,4 @@
+- modello singolo con quello di lollo
+- finire api belle
+- pulizia
+- 

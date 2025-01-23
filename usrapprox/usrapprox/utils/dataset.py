@@ -21,8 +21,8 @@ class AllSongsDataset(Dataset):
         return torch.Tensor([embedding1, embedding2]), index
 
     def __len__(self):
-        # return len(self.splits)
-        return 300
+        return len(self.splits)
+        # return 300
 
     def __get_embedding(self, idx):
         song_id = self.splits[idx]
@@ -104,9 +104,18 @@ class UserDefinedContrastiveDataset(Dataset):
         assert len(self.positive_samples) >= self.npos, "Not enough positive samples."
         assert len(self.negative_samples) >= self.nneg, "Not enough negative samples."
 
+        # set two value to randomly n,m with sum up to 30
+
+        # n,m = 0,0
+        # while n+m != 30:
+        #     n = torch.randint(1, 30, (1,))
+        #     m = 30 - n
+
+        # pos_samples = torch.randperm(len(self.positive_samples))[: m]
+        # neg_samples = torch.randperm(len(self.negative_samples))[: n]
+
         pos_samples = torch.randperm(len(self.positive_samples))[: self.npos]
         neg_samples = torch.randperm(len(self.negative_samples))[: self.nneg]
-
         positives = [
             self.__get_embedding(self.positive_samples[i][0]) for i in pos_samples
         ]
@@ -114,24 +123,17 @@ class UserDefinedContrastiveDataset(Dataset):
             self.__get_embedding(self.negative_samples[i][0]) for i in neg_samples
         ]
 
-        # pos_scores = [self.positive_samples[i][1] for i in pos_samples]
-        # neg_scores = [self.negative_samples[i][1] for i in neg_samples]
+        positives = torch.Tensor(positives)
+        negatives = torch.Tensor(negatives)
 
-        # pos = self.positive_samples[index]
-        # positives = [self.__get_embedding(pos[0])]
-        # pos_scores = [pos[1]]
+        merged = torch.cat((positives, negatives), dim=0)
 
-        # neg = self.negative_samples[index]
-        # negatives = [self.__get_embedding(neg[0])]
-        # neg_scores = [neg[1]]
-
+        return merged
         return torch.Tensor(positives), torch.Tensor(negatives)
 
-
     def __len__(self):
-        # return len(self.positive_samples) #+ len(self.negative_samples)
-        return 300
-
+        return len(self.positive_samples) #+ len(self.negative_samples)
+        # return 300
 
     def __get_embedding(self, song_id):
         emb_file = os.path.join(self.embs_path, f"{song_id}.json")
