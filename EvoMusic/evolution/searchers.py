@@ -7,6 +7,7 @@ import numpy as np
 import random
 
 from evotorch import Problem, Solution
+from evotorch.neuroevolution import GymNE, VecGymNE
 from evotorch.algorithms import SearchAlgorithm
 from evotorch.algorithms.searchalgorithm import SinglePopulationAlgorithmMixin
 import torch
@@ -365,6 +366,7 @@ class MusicOptimizationProblem(Problem):
         self.current_time = 0 # time taken to generate the current population
         
         self.generated = 0
+        self.total_generated = 0
 
     def _evaluate(self, solution: Solution):
         """
@@ -411,6 +413,7 @@ class MusicOptimizationProblem(Problem):
         )
         if self.generated >= self.evo_config.search.population_size:
             self.generated = 0
+            self.total_generated += self.evo_config.search.population_size
             print(f"\nFinished generation for this population. Total Time: {self.current_time:.2f}s")
             self.current_time = 0
 

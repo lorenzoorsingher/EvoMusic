@@ -18,29 +18,53 @@ class MusicEvolver:
         else:
             # Initialize the optimizer for embedding optimization
             if config.search.mode == "CMAES":
-                self.optimizer = CMAES(
-                    self.problem, stdev_init=2, popsize=config.search.population_size, 
-                )
+                default={
+                    "problem": self.problem,
+                    "stdev_init": 1,
+                    "popsize": config.search.population_size,
+                }
+                new_params = config.search.evotorch
+                params = {**default, **new_params}
+                self.optimizer = CMAES(**params)
             elif config.search.mode == "PGPE":
-                self.optimizer = PGPE(
-                    self.problem,
-                    popsize=config.search.population_size,
-                    center_learning_rate=1,
-                    stdev_learning_rate=1,
-                    stdev_init=1,
-                )
+                default={
+                    "problem": self.problem,
+                    "center_learning_rate": 1,
+                    "stdev_learning_rate": 1,
+                    "stdev_init": 1,
+                    "popsize": config.search.population_size,
+                }
+                new_params = config.search.evotorch
+                params = {**default, **new_params}
+                self.optimizer = PGPE(**params)
             elif config.search.mode == "XNES":
-                self.optimizer = XNES(
-                    self.problem, popsize=config.search.population_size, stdev_init=1
-                )
+                default={
+                    "problem": self.problem,
+                    "stdev_init": 1,
+                    "popsize": config.search.population_size,
+                }
+                new_params = config.search.evotorch
+                params = {**default, **new_params}
+                self.optimizer = XNES(**params)
             elif config.search.mode == "SNES":
-                self.optimizer = SNES(
-                    self.problem, popsize=config.search.population_size, stdev_init=1
-                )
+                default = {
+                    "problem": self.problem,
+                    "popsize": config.search.population_size,
+                    "stdev_init": 1,
+                }
+                new_params = config.search.evotorch
+                params = {**default, **new_params}
+                self.optimizer = SNES(**params)
             elif config.search.mode == "CEM":
-                self.optimizer = CEM(
-                    self.problem, popsize=config.search.population_size, stdev_init=1, parenthood_ratio=0.25
-                )
+                default = {
+                    "problem": self.problem,
+                    "popsize": config.search.population_size,
+                    "stdev_init": 1,
+                    "parenthood_ratio": 0.25,
+                }
+                new_params = config.search.evotorch
+                params = {**default, **new_params}
+                self.optimizer = CEM(**params)
             else:
                 raise ValueError(
                     "Invalid searcher specified. Choose between 'CMAES', 'PGPE', 'XNES', 'SNES', 'CEM'."
