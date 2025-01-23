@@ -79,7 +79,7 @@ class LivePlotter(Logger):
         if self.avg_time == 0:
             self.avg_time = time_diff
         else:
-            self.avg_time = 0.9 * self.avg_time + 0.1 * time
+            self.avg_time = 0.9 * self.avg_time + 0.1 * time_diff
         
         # Update iteration and fitness history
         current_iter = status["iter"]
