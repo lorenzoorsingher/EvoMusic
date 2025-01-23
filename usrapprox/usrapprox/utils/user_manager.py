@@ -2,7 +2,6 @@
 Class and methods for user management and training.
 """
 
-from dataclasses import dataclass
 import json
 from torch.utils.tensorboard import SummaryWriter
 
@@ -13,115 +12,171 @@ from torch.nn import functional as F
 from tqdm import tqdm
 
 from usrapprox.usrapprox.models.aligner_v2 import AlignerV2Wrapper
+
 # from usrapprox.usrapprox.models.probabilistic import probabilistic_model_torch
 from usrapprox.usrapprox.models.usr_emb import UsrEmb
 from usrapprox.usrapprox.utils.config import AlignerV2Config, UserConfig, TrainConfig
-from usrapprox.usrapprox.utils.dataset import UserDefinedContrastiveDataset, ContrDatasetWrapper
+from usrapprox.usrapprox.utils.dataset import (
+    UserDefinedContrastiveDataset,
+    ContrDatasetWrapper,
+)
+from usrapprox.usrapprox.utils.user import RealUser, SynthUser, User
 from usrapprox.usrapprox.utils.utils import ScoreToFeedback
 
 
-
-
-class User:
+class UserManager:
     def __init__(
         self,
-        user_id: int,
-        user_embedding: torch.Tensor,
-        memory_length: int,
-        train_config: TrainConfig = None,
+        users: list[RealUser, SynthUser],
+        users_config: UserConfig,
+        user_delta: int,
+        aligner_config: AlignerV2Config = AlignerV2Config(),
+        device: str = "cuda",
     ):
-        """
-        This class represents a user. It has its id, it's last updated user_embedding
-        and it automatically stores the last `memory_length` batches in a lifo style.
-        """
 
-        self._user_id = user_id
-        self._user_embedding = user_embedding
-        self._memory_length = memory_length
-        self._memory = []
-        self._train_dataloader = None
-        self._test_dataloader = None
-        self._train_config: TrainConfig = train_config
+        dict_users = {}
 
-    def set_train_config(self, train_config: TrainConfig):
-        """
-        This method is used to set the training configuration.
-        """
-        if self._train_config is not None:
-            raise ValueError("Train config already set.")
-        self._train_config = train_config
+        for i, user in enumerate(users):
+            if isinstance(user, RealUser):
+                user.set_memory_size(users_config.memory_length)
+                user.set_user_id(user_delta+i+1)
+                dict_users[user.uuid] = user
 
-    def update_user_embedding(self, user_embedding: torch.Tensor):
-        """
-        This method is used to update the user embedding.
-        """
-        self._user_embedding = user_embedding
+            elif isinstance(user, SynthUser):
+                user.set_memory_size(users_config.memory_length)
+                user.set_user_id(user_delta+i+1)
+                user.set_user_reference(user.uuid)
+                dict_users[user.uuid] = user
 
-    def add_to_memory(self, batch: torch.Tensor):
-        """
-        This method is used to add a batch to the memory.
-        """
-        if len(self._memory) == self._memory_length:
-            self._memory.pop(0)
-        self._memory.append(batch)
+            else:
+                raise ValueError("User type not recognized.")
 
-    def set_dataloaders(
-        self, train_dataloader: DataLoader, test_dataloader: DataLoader
-    ):
-        """
-        This method is used to set the dataloaders.
-        """
-        if self._train_dataloader is not None or self._test_dataloader is not None:
-            raise ValueError("Dataloaders already set.")
+        self._users = dict_users
 
-        self._train_dataloader = train_dataloader
-        self._test_dataloader = test_dataloader
+        self.device = device
+        self.usr_emb = UsrEmb(
+            users_config=users_config, aligner_config=aligner_config, device=device
+        )
 
-        print("Dataloaders set.")
+        self.usr_emb.eval()
+        self.usr_emb.to(self.device)
 
-    @property
-    def memory(self) -> list[torch.Tensor]:
-        """
-        This method is used to get the memory.
+    def __getitem__(self, uuid: int) -> User:
+        if uuid not in self._users:
+            print(self._users.keys())
+            raise ValueError(f"User {uuid} not found.")
+        return self._users[uuid]
 
-        TODO: Modify this so that it returns a tensor instead of a list.
+    def load_datasets(
+        self, user: User, train_config: TrainConfig
+    ) -> tuple[DataLoader, DataLoader]:
         """
-        return self._memory
+        This method is used to load the datasets.
+        """
+        if user.train_dataloader is None and user.test_dataloader is None:
+            if train_config.type == "ContrDatasetMERT":
+                print("Using ContrDatasetMERT")
+                with open(train_config.splits_path, "r") as f:
+                    splits = json.load(f)
 
-    @property
-    def user_embedding(self) -> torch.Tensor:
-        """
-        This method is used to get the user embedding.
-        """
-        return self._user_embedding
+                train_dataset = ContrDatasetWrapper(
+                    train_config.embs_path,
+                    train_config.stats_path,
+                    split=splits["train"],
+                    usrs=user.user_id,
+                    nneg=train_config.nneg,
+                    multiplier=train_config.multiplier,
+                )
 
-    @property
-    def user_id(self) -> int:
-        """
-        This method is used to get the user id.
-        """
-        return self._user_id
+                test_dataset = ContrDatasetWrapper(
+                    train_config.embs_path,
+                    train_config.stats_path,
+                    split=splits["test"],
+                    usrs=user.user_id,
+                    nneg=train_config.nneg,
+                    multiplier=train_config.multiplier,
+                )
+            else:
+                print("Using UserDefinedContrastiveDataset")
+                train_dataset = UserDefinedContrastiveDataset(
+                    alignerV2=self.usr_emb,
+                    splits_path=train_config.splits_path,
+                    embs_path=train_config.embs_path,
+                    user_id=user.user_id,
+                    npos=train_config.npos,
+                    nneg=train_config.nneg,
+                    batch_size=train_config.batch_size,
+                    num_workers=train_config.num_workers,
+                    partition="train",
+                )
 
-    @property
-    def train_dataloader(self) -> DataLoader:
-        """
-        This method is used to get the train dataloader.
-        """
-        return self._train_dataloader
+                test_dataset = UserDefinedContrastiveDataset(
+                    alignerV2=self.usr_emb,
+                    splits_path=train_config.splits_path,
+                    embs_path=train_config.embs_path,
+                    user_id=user.user_id,
+                    npos=train_config.npos,
+                    nneg=train_config.nneg,
+                    batch_size=train_config.batch_size,
+                    num_workers=train_config.num_workers,
+                    partition="test",
+                )
 
-    @property
-    def test_dataloader(self) -> DataLoader:
-        """
-        This method is used to get the test dataloader.
-        """
-        return self._test_dataloader
+            train_dataloader = torch.utils.data.DataLoader(
+                train_dataset,
+                batch_size=train_config.batch_size,
+                shuffle=True,
+                num_workers=train_config.num_workers,
+            )
 
-    @property
-    def train_config(self) -> TrainConfig:
+            test_dataloader = torch.utils.data.DataLoader(
+                test_dataset,
+                batch_size=train_config.batch_size,
+                shuffle=True,
+                num_workers=train_config.num_workers,
+            )
+
+            user.set_dataloaders(train_dataloader, test_dataloader)
+
+        return user.train_dataloader, user.test_dataloader
+
+    def update_memory(self, user: User, batch: torch.Tensor):
+        user.add_to_memory(batch)
+
+    def get_memory(self, user: User):
+        return user.memory
+
+    def clear_memory(self, user: User):
+        user.empty_memory()
+
+    def user_step(self, user: User, batch: torch.Tensor):
+        if isinstance(user, RealUser) or isinstance(user, SynthUser):
+            user_embedding, embeddings, temperature, music_score = self.usr_emb(
+                user.user_id, batch
+            )
+
+        else:
+            raise ValueError("User type not recognized.")
+
+        return user_embedding, embeddings, temperature, music_score
+
+    def feedback_step(self, user: User, batch: torch.Tensor):
         """
-        This method is used to get the train config.
+        This works with torch.no_grad().
         """
-        return self._train_config
+        if isinstance(user, RealUser):
+            raise NotImplementedError()
+        elif isinstance(user, SynthUser):
+            with torch.no_grad():
+                # usr_embedding_id = user._user_id
+
+                user_embedding, embeddings, temperature, music_score = self.usr_emb(
+                    user.model_reference_id, batch
+                )
+        else:
+            raise ValueError("User type not recognized.")
+
+        return user_embedding, embeddings, temperature, music_score
 
 
 class UsersTrainManager:
@@ -138,7 +193,7 @@ class UsersTrainManager:
         self.device = device
 
         # Create the base UsrEmb model
-        self.usr_emb = UsrEmb(aligner_config, device)
+        self.usr_emb = UsrEmb(users_config, aligner_config, device)
 
         self._alignerv2 = None
 
@@ -200,28 +255,6 @@ class UsersTrainManager:
         ).mean()
 
         return info_nce_loss
-
-    def __set_alignerv2(self):
-        """
-        This method is used to set the alignerv2 model.
-        """
-        if self._alignerv2 is None:
-            self._alignerv2 = AlignerV2Wrapper(self.aligner_config, self.device)
-
-    def __set_model_embedding(self, user: User) -> None:
-        """
-        Set the model embedding to the current user_id embedding.
-
-        This is done only if the user_id is different from the last trained user.
-        """
-        if self._last_used_user is None or self._last_used_user != user.user_id:
-            self._last_used_user = user.user_id
-            user_embedding = user.user_embedding
-            self.usr_emb.set_user_embedding(user_embedding)
-
-    def __update_user_embedding(self, user: User) -> None:
-        user_embedding = self.usr_emb.get_user_embedding_weights
-        user.update_user_embedding(user_embedding)
 
     def __load_datasets(self, user: User) -> tuple[DataLoader, DataLoader]:
         """
@@ -333,9 +366,12 @@ class UsersTrainManager:
         # self.usr_emb.users.train()
 
         losses = []
+        user1 = self.__get_user(1)
 
         for i, (tracks) in enumerate(tqdm(train_loader, desc="Training", leave=False)):
             # tracks = torch.cat((posemb, negemb), dim=1)
+            # self.__set_model_embedding(user1)
+            # self.__set_model_embedding(user)
 
             tracks = tracks.to(self.device)
             _, _, temperature, music_score = self.usr_emb(tracks)
@@ -450,20 +486,20 @@ class UsersTrainManager:
         # save the user embedding
         self.__update_user_embedding(user)
 
-    def get_user_score(self, user_id: int, batch: torch.Tensor):
-        """
-        This method is used to get the score of a user given a batch.
-        TODO: aggiungere per farlo andare col modello di Lollo
-        """
-        self.__check_user(user_id)
-        self.__set_model_embedding(user_id)
+    # def get_user_score(self, user_id: int, batch: torch.Tensor):
+    #     """
+    #     This method is used to get the score of a user given a batch.
+    #     TODO: aggiungere per farlo andare col modello di Lollo
+    #     """
+    #     self.__check_user(user_id)
+    #     self.__set_model_embedding(user_id)
 
-        _, _, score = self.usr_emb(batch)
-        normalized_similarities = (score + 1) / 2
+    #     _, _, score = self.usr_emb(batch)
+    #     normalized_similarities = (score + 1) / 2
 
-        feedback_wrt_song = probabilistic_model_torch(normalized_similarities)
+    #     feedback_wrt_song = probabilistic_model_torch(normalized_similarities)
 
-        return feedback_wrt_song
+    #     return feedback_wrt_song
 
     def save_weights(self):
         raise NotImplementedError()

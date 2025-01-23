@@ -5,6 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 from usrapprox.usrapprox.models.aligner_v2 import AlignerV2Wrapper
+from usrapprox.usrapprox.models.usr_emb import UsrEmb
 from usrembeds.datautils.dataset import ContrDatasetMERT
 
 
@@ -22,8 +23,8 @@ class AllSongsDataset(Dataset):
         return torch.Tensor([embedding1, embedding2]), index
 
     def __len__(self):
-        return len(self.splits)
-        # return 300
+        # return len(self.splits)
+        return 300
 
     def __get_embedding(self, idx):
         song_id = self.splits[idx]
@@ -48,7 +49,7 @@ class AllSongsDataset(Dataset):
 class UserDefinedContrastiveDataset(Dataset):
     def __init__(
         self,
-        alignerV2: AlignerV2Wrapper,
+        alignerV2: UsrEmb,
         splits_path,
         embs_path,
         user_id=0,
@@ -61,7 +62,7 @@ class UserDefinedContrastiveDataset(Dataset):
     ):
         if random_pool != None:
             assert random_pool < 30, "Random pool must be less than 30"
-            self.random_pool = random_pool
+        self.random_pool = random_pool
         
         self.embs_path = embs_path
         
@@ -88,22 +89,23 @@ class UserDefinedContrastiveDataset(Dataset):
         self.negative_samples = []
 
         # Process feedback for song pairs
-        for emb, indices in tqdm(dataloader, desc="Processing Feedback"):
-            emb = emb.to(device)
-            index_tensor = torch.LongTensor([user_id] * emb.shape[0]).to(device)
+        with torch.no_grad():
+            for emb, indices in tqdm(dataloader, desc="Processing Feedback"):
+                emb = emb.to(device)
+                # index_tensor = torch.LongTensor([user_id] * emb.shape[0]).to(device)
 
-            # batch = torch.cat((emb1, emb2), dim=1)
-            batch = emb
-            _, _, _, feedback_scores = alignerV2(index_tensor, batch)
+                # batch = torch.cat((emb1, emb2), dim=1)
+                batch = emb
+                _, _, _, feedback_scores = alignerV2(user_id, batch)
 
-            feedback_scores = feedback_scores.cpu().tolist()
-            for idx, score in zip(indices.tolist(), feedback_scores):
-                song_id = self.index_to_song_id[idx]
-                # for score in score_vector:
-                if score[0] > 0:
-                    self.positive_samples.append((song_id, score[0]))
-                else:
-                    self.negative_samples.append((song_id, score[0]))
+                feedback_scores = feedback_scores.cpu().tolist()
+                for idx, score in zip(indices.tolist(), feedback_scores):
+                    song_id = self.index_to_song_id[idx]
+                    # for score in score_vector:
+                    if score[0] > 0:
+                        self.positive_samples.append((song_id, score[0]))
+                    else:
+                        self.negative_samples.append((song_id, score[0]))
 
         self.npos = npos
         self.nneg = nneg
@@ -139,8 +141,8 @@ class UserDefinedContrastiveDataset(Dataset):
         return merged
 
     def __len__(self):
-        return len(self.positive_samples) #+ len(self.negative_samples)
-        # return 300
+        # return len(self.positive_samples) #+ len(self.negative_samples)
+        return 300
 
     def __get_embedding(self, song_id):
         emb_file = os.path.join(self.embs_path, f"{song_id}.json")
