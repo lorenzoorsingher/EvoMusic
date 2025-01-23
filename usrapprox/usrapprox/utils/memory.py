@@ -23,14 +23,18 @@ class MemoryBuffer:
         """
         if self._memory is None:
             batch_shape = batch.shape
-            self._memory = torch.empty((self._memory_length,) + batch_shape, dtype=batch.dtype, device=batch.device)
+            self._memory = torch.empty(
+                (self._memory_length,) + batch_shape,
+                dtype=batch.dtype,
+                device=batch.device,
+            )
 
         if batch.shape != self._memory.shape[1:]:
             raise ValueError("Batch shape does not match memory batch shape.")
 
         self._memory[self._current_index] = batch
         self._current_index = (self._current_index + 1) % self._memory_length
-        
+
         if self._stored_elements < self._memory_length:
             self._stored_elements += 1
 
@@ -53,11 +57,14 @@ class MemoryBuffer:
             return torch.empty(0)  # Return an empty tensor if no memory has been added
 
         if self._stored_elements < self._memory_length:
-            data = self._memory[:self._stored_elements]
+            data = self._memory[: self._stored_elements]
         else:
-            data = torch.cat((
-                self._memory[self._current_index:], 
-                self._memory[:self._current_index]
-            ), dim=0)
+            data = torch.cat(
+                (
+                    self._memory[self._current_index :],
+                    self._memory[: self._current_index],
+                ),
+                dim=0,
+            )
 
         return data.view(-1, *data.shape[2:])

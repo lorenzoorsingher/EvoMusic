@@ -48,7 +48,7 @@ class UsrEmb(AlignerV2):
     def forward(self, idx, batch):
 
         index = torch.LongTensor([idx for _ in range(batch.shape[0])])
-        
+
         index = index.to(self._device)
         # super().to(self._device)
 

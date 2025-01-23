@@ -13,10 +13,11 @@ from random import randint
 
 import concurrent.futures  # Added for multi-threading
 
+
 class ContrDatasetMERT(Dataset):
     # static embeddings variable to store the embeddings
     embeddings = {}
-    
+
     def __init__(
         self,
         embs_dir,
@@ -27,7 +28,7 @@ class ContrDatasetMERT(Dataset):
         multiplier=10,
         transform=None,
         preload=False,  # New parameter for preloading
-        max_workers=12,   # Number of threads for preloading
+        max_workers=12,  # Number of threads for preloading
     ):
         self.embs_dir = embs_dir
         self.stats_path = stats_path
@@ -80,7 +81,8 @@ class ContrDatasetMERT(Dataset):
         Helper function to load a single embedding JSON file.
         Returns a tuple of (key, embedding) or (key, None) if not found.
         """
-        if key in ContrDatasetMERT.embeddings: return None  # Skip if already loaded
+        if key in ContrDatasetMERT.embeddings:
+            return None  # Skip if already loaded
         emb_file = os.path.join(self.embs_dir, f"{key}.json")
         if os.path.isfile(emb_file):
             try:
@@ -102,19 +104,25 @@ class ContrDatasetMERT(Dataset):
         """
         Preloads all embeddings into the self.embeddings dictionary using multi-threading.
         """
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=self.max_workers
+        ) as executor:
             # Use list to eagerly evaluate and use tqdm for progress bar
-            results = list(tqdm(
-                executor.map(self._load_embedding, self.emb_keys),
-                total=len(self.emb_keys),
-                desc="Preloading embeddings"
-            ))
+            results = list(
+                tqdm(
+                    executor.map(self._load_embedding, self.emb_keys),
+                    total=len(self.emb_keys),
+                    desc="Preloading embeddings",
+                )
+            )
 
         # Populate the embeddings dictionary
         for key, emb in results:
             if emb is not None:
                 ContrDatasetMERT.embeddings[key] = emb
-        print(f"[DATASET] Preloaded {len(ContrDatasetMERT.embeddings)} embeddings out of {len(self.emb_keys)}")
+        print(
+            f"[DATASET] Preloaded {len(ContrDatasetMERT.embeddings)} embeddings out of {len(self.emb_keys)}"
+        )
 
     def __len__(self):
         return self.nusers * self.multiplier

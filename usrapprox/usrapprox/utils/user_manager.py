@@ -39,12 +39,12 @@ class UserManager:
         for i, user in enumerate(users):
             if isinstance(user, RealUser):
                 user.set_memory_size(users_config.memory_length)
-                user.set_user_id(user_delta+i+1)
+                user.set_user_id(user_delta + i + 1)
                 dict_users[user.uuid] = user
 
             elif isinstance(user, SynthUser):
                 user.set_memory_size(users_config.memory_length)
-                user.set_user_id(user_delta+i+1)
+                user.set_user_id(user_delta + i + 1)
                 user.set_user_reference(user.uuid)
                 dict_users[user.uuid] = user
 

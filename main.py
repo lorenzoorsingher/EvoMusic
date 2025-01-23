@@ -18,18 +18,16 @@ if __name__ == "__main__":
 
     # Give me a list of users (initialize only IDs)
     # users = [RealUser(0), SynthUser(1)]
-    users = [SynthUser(user), SynthUser(user+1), SynthUser(user+5)]#, SynthUser(1)]
-
+    users = [
+        SynthUser(user),
+        SynthUser(user + 1),
+        SynthUser(user + 5),
+    ]  # , SynthUser(1)]
 
     user_config = UserConfig(memory_length=1, amount=len(users))
 
     user_train_config = TrainConfig(
-        batch_size=50,
-        npos=15,
-        nneg=15,
-        epochs=20,
-        num_workers=6,
-        lr=0.001
+        batch_size=50, npos=15, nneg=15, epochs=20, num_workers=6, lr=0.001
     )
 
     # torch get device
@@ -45,6 +43,5 @@ if __name__ == "__main__":
     user1 = manager.get_user(user)
 
     manager.test_train(user1, user_train_config)
-
 
     writer.close()

@@ -63,10 +63,9 @@ class UserDefinedContrastiveDataset(Dataset):
         if random_pool != None:
             assert random_pool < 30, "Random pool must be less than 30"
         self.random_pool = random_pool
-        
+
         self.embs_path = embs_path
-        
-        
+
         with open(splits_path, "r") as f:
             splits = json.load(f)
         self.splits = splits[partition]
@@ -116,13 +115,13 @@ class UserDefinedContrastiveDataset(Dataset):
 
         # set two value to randomly n,m with sum up to 30
         if self.random_pool != None:
-            n,m = 0,0
-            while n+m != 30:
+            n, m = 0, 0
+            while n + m != 30:
                 n = torch.randint(1, 30, (1,))
                 m = 30 - n
 
-            pos_samples = torch.randperm(len(self.positive_samples))[: m]
-            neg_samples = torch.randperm(len(self.negative_samples))[: n]
+            pos_samples = torch.randperm(len(self.positive_samples))[:m]
+            neg_samples = torch.randperm(len(self.negative_samples))[:n]
         else:
             pos_samples = torch.randperm(len(self.positive_samples))[: self.npos]
             neg_samples = torch.randperm(len(self.negative_samples))[: self.nneg]
@@ -162,6 +161,7 @@ class UserDefinedContrastiveDataset(Dataset):
             print("File does not exist")
             return [0.0]
 
+
 class ContrDatasetWrapper(ContrDatasetMERT):
     def __init__(
         self,
@@ -199,9 +199,7 @@ class ContrDatasetWrapper(ContrDatasetMERT):
 
         # Remove users not in the split
         # self.stats = self.stats[self.stats["userid"].isin(usrs)]
-        self.stats = self.stats[
-            self.stats["userid"] == self.stats["userid"].iloc[usrs]
-        ]
+        self.stats = self.stats[self.stats["userid"] == self.stats["userid"].iloc[usrs]]
 
         self.idx2usr = self.stats["userid"].unique().tolist()
 

@@ -1,4 +1,5 @@
 import torch
+
 # import torch.nn as nn
 # from usrapprox.usrapprox.models.probabilistic import probabilistic_model_torch
 from usrapprox.usrapprox.utils.config import AlignerV2Config
@@ -36,11 +37,13 @@ class AlignerV2Wrapper(AlignerV2):
         )
 
         self.to(device)
-        
+
         self.load_state_dict(model_state)
         self.eval()
 
-    def forward(self, idx, music_embs) -> list[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(
+        self, idx, music_embs
+    ) -> list[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         This method is used to make predictions.
 
@@ -48,9 +51,9 @@ class AlignerV2Wrapper(AlignerV2):
         - user_embedding: The user embedding.
         - embeddings: The embeddings.
         - temperature: The temperature.
-        - music_score: The score of the music.        
+        - music_score: The score of the music.
         """
-        
+
         if self.training:
             raise ValueError(
                 "The model is in training mode but it shouldn't by design!"
@@ -84,12 +87,10 @@ class AlignerV2Wrapper(AlignerV2):
             # # --------------------------------------------
 
             # music_score = torch.cat((pos_feedback_wrt_song, neg_feedback_wrt_song), dim=1)
-            
-            
+
             # music_score_expanded = music_score.unsqueeze(-1).unsqueeze(-1)  # Shape: [16, 21, 1, 1]
             # music_score_expanded = music_score_expanded.expand(-1, -1, 13, 1)  # Shape: [16, 21, 13, 768]
             music_score = self.calculate_score(user_embedding, embeddings)
-
 
             """
             Per fare training e evaluation servono un po' di cose:

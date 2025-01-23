@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass
 class AlignerV2Config:
     # Used only to correctly load alignerv2 model
@@ -19,14 +20,16 @@ class AlignerV2Config:
     lr: float = 0.001
     noise_level: float = 0.0
     encoder: str = "MERT"
-    abs_file_path: str = "usrembeds/checkpoints/run_20241227_151619_best.pt" 
-    
+    abs_file_path: str = "usrembeds/checkpoints/run_20241227_151619_best.pt"
+
+
 @dataclass
 class UserConfig:
     memory_length: int
-    amount:int # number of users
-    init: str = "mean" # "random" or "mean" or "rmean"
-    rmean: float = 0.1 # used only if init is "rmean" - weight of the random noise
+    amount: int  # number of users
+    init: str = "mean"  # "random" or "mean" or "rmean"
+    rmean: float = 0.1  # used only if init is "rmean" - weight of the random noise
+
 
 @dataclass
 class TrainConfig:

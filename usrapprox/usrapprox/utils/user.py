@@ -13,8 +13,7 @@ class User:
     ):
         self._uuid = user_id
         self._user_id = None
-        self._memory : MemoryBuffer = None
-
+        self._memory: MemoryBuffer = None
 
         self._train_dataloader = None
         self._test_dataloader = None
@@ -105,11 +104,9 @@ class SynthUser(User):
         return self._model_reference_id
 
 
-
 class RealUser(User):
     def __init__(
         self,
         user_id: int,
     ):
         super().__init__(user_id)
-

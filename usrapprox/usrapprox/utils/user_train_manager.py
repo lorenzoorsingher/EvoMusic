@@ -154,9 +154,7 @@ class UsersTrainManager:
                 target_scores = torch.cat((target_scores, target_score))
 
         # Access the weights of the user embeddings
-        usr_emb_weight = self._user_manager.usr_emb.users.weight[
-            user.user_id
-        ]
+        usr_emb_weight = self._user_manager.usr_emb.users.weight[user.user_id]
         aligner_weight = self._user_manager.usr_emb.users.weight[
             user.model_reference_id
         ]
