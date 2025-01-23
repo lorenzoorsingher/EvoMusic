@@ -367,6 +367,8 @@ class MusicOptimizationProblem(Problem):
         
         self.generated = 0
         self.total_generated = 0
+        
+        self.epoch_pop = self.evo_config.search.population_size
 
     def _evaluate(self, solution: Solution):
         """
@@ -394,27 +396,31 @@ class MusicOptimizationProblem(Problem):
         if self.sample_time == 0: self.sample_time = generation_time
         else: self.sample_time = self.sample_time * 0.9 + generation_time * 0.1
         self.current_time += generation_time
-        time_left = self.sample_time * (self.evo_config.search.population_size - self.generated)
+        time_left = self.sample_time * (self.epoch_pop - self.generated)
         total_time = self.current_time + time_left
         # make into time format so it's easier to read
         total_time = time.strftime("%H:%M:%S", time.gmtime(total_time))
         current_time = time.strftime("%H:%M:%S", time.gmtime(self.current_time))
         
-        bar_length = 30
-        filled_length = int(bar_length * self.generated // self.evo_config.search.population_size)
-        bar = "█" * filled_length + "-" * (bar_length - filled_length)
-        print(
-            f"Generated {self.generated}/{self.evo_config.search.population_size} |{bar}| "
-            f"{(100 * self.generated / self.evo_config.search.population_size):.1f}% "
-            f"~ Fitness {fitness:.2f} "
-            f"~ Progress {current_time} / {total_time} "
-            f"~ Sample Time {generation_time:.2f}s",
-            end="\r"
-        )
-        if self.generated >= self.evo_config.search.population_size:
+        if self.epoch_pop > 0:
+            bar_length = 30
+            filled_length = int(bar_length * self.generated // self.epoch_pop)
+            bar = "█" * filled_length + "-" * (bar_length - filled_length)
+            print(
+                f"Generated {self.generated}/{self.epoch_pop} |{bar}| "
+                f"{(100 * self.generated / self.epoch_pop):.1f}% "
+                f"~ Fitness {fitness:.2f} "
+                f"~ Progress {current_time} / {total_time} "
+                f"~ Sample Time {generation_time:.2f}s",
+                end="\r"
+            )
+        else:
+            print(f"Generated {self.generated} | Fitness {fitness:.2f} | Sample Time {generation_time:.2f}s", end="\r")
+            
+        if self.generated >= self.epoch_pop and self.epoch_pop > 0:
             self.generated = 0
-            self.total_generated += self.evo_config.search.population_size
-            print(f"\nFinished generation for this population. Total Time: {self.current_time:.2f}s")
+            self.total_generated += self.epoch_pop
+            print(f"\nFinished generation for this population. Total Time: {self.current_time:.2f}s", end="\r")
             self.current_time = 0
 
         solution.set_evals(fitness)

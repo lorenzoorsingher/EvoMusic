@@ -1,4 +1,5 @@
 import os
+import time
 
 from sklearn.decomposition import PCA
 import joblib
@@ -48,6 +49,8 @@ class LivePlotter(Logger):
         self.best_fitness_history = []
 
         self.best_embedding_history = []
+        self.start_time = time.time()
+        self.avg_time = 0
 
         if self.config.visualizations:
             matplotlib.use("TkAgg")
@@ -71,6 +74,13 @@ class LivePlotter(Logger):
             plt.show()
 
     def _log(self, status: dict):
+        current_time = time.time()
+        time_diff = current_time - self.start_time
+        if self.avg_time == 0:
+            self.avg_time = time_diff
+        else:
+            self.avg_time = 0.9 * self.avg_time + 0.1 * time
+        
         # Update iteration and fitness history
         current_iter = status["iter"]
         self.iterations.append(current_iter)
@@ -123,9 +133,9 @@ class LivePlotter(Logger):
                 # wandb.log({"Prompts Table": table}, step=current_iter)
         
         if self.problem.text_mode:
-            print(f"Iteration: {current_iter} | Average Fitness: {avg_fitness} | Worst Fitness: {worst} | Best Fitness: {best_fitness} | Best Prompt: {best}")
+            print(f"\nIteration: {current_iter} | Average Fitness: {avg_fitness} | Worst Fitness: {worst} | Best Fitness: {best_fitness} | time: {time_diff:.2f}s | avg time: {self.avg_time:.2f}s | Best Prompt: {best}\n")
         else:   
-            print(f"Iteration: {current_iter} | Average Fitness: {avg_fitness} | Worst Fitness: {worst} | Best Fitness: {best_fitness}")
+            print(f"\nIteration: {current_iter} | Average Fitness: {avg_fitness} | Worst Fitness: {worst} | Best Fitness: {best_fitness} | time: {time_diff:.2f}s | avg time: {self.avg_time:.2f}s\n")
         
         best_audio_path = self.generator.generate_music(
             input=best, 
@@ -134,6 +144,10 @@ class LivePlotter(Logger):
         )
         
         if self.config.wandb:
-            wandb.log({"Best Audio": wandb.Audio(best_audio_path, caption=best)}, step=current_iter)
-        
+            if self.problem.text_mode:
+                wandb.log({"Best Audio": wandb.Audio(best_audio_path, caption=best)}, step=current_iter)
+            else:
+                wandb.log({"Best Audio": wandb.Audio(best_audio_path)}, step=current_iter)
+                
+        self.start_time = time.time()
 

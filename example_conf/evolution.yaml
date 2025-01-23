@@ -39,7 +39,7 @@ evolution:
     noise_weight: 0.5 # noise weight for the fitness function
 
   search:
-    mode: "LLM evolve" # available modes are full LLM, LLM evolve, CMAES, PGPE, XNES, SNES, CEM
+    mode: "LLM evolve" # available modes are full LLM, LLM evolve, CMAES, PGPE, XNES, SNES, CEM, CoSyNE, GA
     
     # general search parameters
     population_size: 50 # size of the population

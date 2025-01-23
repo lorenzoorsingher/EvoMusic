@@ -1,4 +1,6 @@
 from evotorch.algorithms import CMAES, PGPE, XNES, SNES, CEM
+from evotorch.algorithms.ga import Cosyne, GeneticAlgorithm, SteadyStateGA
+from evotorch.operators import OnePointCrossOver, GaussianMutation
 
 from EvoMusic.music_generation.generators import MusicGenerator
 from EvoMusic.evolution.searchers import PromptSearcher, MusicOptimizationProblem
@@ -65,6 +67,33 @@ class MusicEvolver:
                 new_params = config.search.evotorch
                 params = {**default, **new_params}
                 self.optimizer = CEM(**params)
+            elif config.search.mode == "CoSyNE":
+                default = {
+                    "problem": self.problem,
+                    "popsize": config.search.population_size,   
+                    "tournament_size": 5,
+                    "elitism_ratio": config.search.elites,
+                    "mutation_probability": 0.5,
+                    "mutation_stdev": 5,
+                }
+                self.problem.epoch_pop = 0
+                new_params = config.search.evotorch
+                params = {**default, **new_params}
+                self.optimizer = Cosyne(**params)
+            elif config.search.mode == "GA":
+                default = {
+                    "problem": self.problem,
+                    "popsize": config.search.population_size,
+                    "operators": [
+                        OnePointCrossOver(self.problem, tournament_size=4),
+                        GaussianMutation(self.problem, stdev=5, mutation_probability=0.5),
+                    ],
+                    "elitist": True,
+                }
+                new_params = config.search.evotorch
+                self.problem.epoch_pop = default["popsize"] * len(default["operators"])
+                params = {**default, **new_params}
+                self.optimizer = GeneticAlgorithm(**params)
             else:
                 raise ValueError(
                     "Invalid searcher specified. Choose between 'CMAES', 'PGPE', 'XNES', 'SNES', 'CEM'."
