@@ -21,7 +21,7 @@ if __name__ == "__main__":
     users = [SynthUser(user), SynthUser(user+1), SynthUser(user+5)]#, SynthUser(1)]
 
 
-    user_config = UserConfig(memory_length=5, amount=len(users))
+    user_config = UserConfig(memory_length=1, amount=len(users))
 
     user_train_config = TrainConfig(
         batch_size=50,

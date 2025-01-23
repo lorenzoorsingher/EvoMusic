@@ -74,6 +74,8 @@ class UsersTrainManager:
 
         return info_nce_loss
 
+    counter = 0
+
     def __train(
         self,
         train_loader: torch.utils.data.DataLoader,
@@ -91,10 +93,8 @@ class UsersTrainManager:
             # tracks = tracks.to(self.device)
             # print(tracks.shape)
 
-            # self._user_manager.update_memory(user, tracks)
-            # tracks = self._user_manager.get_memory(user)
-            # print(tracks.shape)
-            # exit()
+            self._user_manager.update_memory(user, tracks)
+            tracks = self._user_manager.get_memory(user)
             tracks = tracks.to(self.device)
 
             _, _, temperature, music_score = self._user_manager.user_step(user, tracks)

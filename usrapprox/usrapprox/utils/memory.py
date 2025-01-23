@@ -47,15 +47,17 @@ class MemoryBuffer:
         Get the memory as a single tensor.
 
         Returns:
-            torch.Tensor: A tensor containing all stored batches, ordered from oldest to newest.
+            torch.Tensor: A tensor containing all stored batches, flattened into a single tensor along the first dimension.
         """
         if self._memory is None or self._stored_elements == 0:
             return torch.empty(0)  # Return an empty tensor if no memory has been added
 
         if self._stored_elements < self._memory_length:
-            return self._memory[:self._stored_elements]
+            data = self._memory[:self._stored_elements]
+        else:
+            data = torch.cat((
+                self._memory[self._current_index:], 
+                self._memory[:self._current_index]
+            ), dim=0)
 
-        return torch.cat((
-            self._memory[self._current_index:], 
-            self._memory[:self._current_index]
-        ), dim=0)
+        return data.view(-1, *data.shape[2:])
