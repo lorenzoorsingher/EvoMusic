@@ -380,7 +380,7 @@ class MusicOptimizationProblem(Problem):
         if not self.text_mode:
             # copy the input to a new tensor as the values are read-only
             generator_input = solution.values.clone().detach()
-        audio_path = self.music_generator.generate_music(input=generator_input, name=f"music_intermediate")
+        audio_path = self.music_generator.generate_music(input=generator_input, duration=self.evo_config.duration, name=f"music_intermediate")
 
         # Compute the embedding of the generated music
         fitness = self.evaluator.compute_fitness([audio_path]).squeeze()

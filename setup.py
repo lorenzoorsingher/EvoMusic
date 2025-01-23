@@ -38,7 +38,7 @@ setup(
         'transformers==4.47.1',
         'pydub==0.25.1',
         'evotorch==0.5.1',
-        'PySoundFile==0.9.0.post1',
+        'soundfile==0.13.0',
         'gradio==3.36.1',
     ],
     python_requires='>=3.9',  # Specify the Python version requirement

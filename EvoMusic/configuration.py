@@ -82,6 +82,7 @@ class FitnessConfig:
     mode: str = "user" # can either be user, music or dynamic
     target_user: int = 0 # static target user for mode user
     target_music: str = "" # path to the target song 
+    noise_weight: float = 0.1 # weight of the noise in the fitness
     
     device: str = "cuda" if torch.cuda.is_available() else "cpu" # device to use for the fitness evaluation
     
@@ -183,6 +184,7 @@ class evoConf:
     device: str = "cuda" if torch.cuda.is_available() else "cpu" # device to use for the evolution
     max_seq_len: int = 5 # maximum length of the prompt when using the token or embeddings optimization
     duration: int = 5 # duration of the generated music in seconds
+    best_duration: int = 10 # duration of the best solution in seconds
     
     evotorch: dict = field(default_factory=dict) # additional parameters for the evolution algorithm when using evotorch's algorithms
     

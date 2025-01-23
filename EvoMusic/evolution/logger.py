@@ -125,7 +125,7 @@ class LivePlotter(Logger):
         best_audio_path = self.generator.generate_music(
             input=best, 
             name="BestPop" + str(current_iter), 
-            duration=self.problem.evo_config.duration
+            duration=self.problem.evo_config.best_duration
         )
         
         if self.config.wandb:
