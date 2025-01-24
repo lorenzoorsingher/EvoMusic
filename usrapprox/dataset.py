@@ -197,8 +197,8 @@ class ContrDatasetMERT(Dataset):
                 neglist.append(neg_emb)
 
         posemb = torch.Tensor(poslist)
-        print(len(poslist))
-        print(len(neglist))
+        # print(len(poslist))
+        # print(len(neglist))
         negemb = torch.Tensor(neglist)
 
 

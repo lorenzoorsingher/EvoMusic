@@ -8,7 +8,6 @@ music_model: "musicgen"
 
 evolution:
   exp_name: "default"
-  output_dir: "generated_audio"
 
   generations: 10 # number of generations to run the evolution for
 

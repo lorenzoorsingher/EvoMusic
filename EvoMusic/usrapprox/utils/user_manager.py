@@ -1,7 +1,7 @@
 import torch
 
 from EvoMusic.usrapprox.models.usr_emb import UsrEmb
-from EvoMusic.usrapprox.utils.config import AlignerV2Config, UserConfig
+from EvoMusic.configuration import AlignerV2Config, UserConfig
 
 from EvoMusic.usrapprox.utils.user import RealUser, SynthUser, User
 

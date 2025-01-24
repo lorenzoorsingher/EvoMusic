@@ -2,7 +2,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from EvoMusic.usrapprox.utils.config import AlignerV2Config, TrainConfig, UserConfig
+from EvoMusic.configuration import AlignerV2Config, TrainConfig, UserConfig
 from EvoMusic.usrapprox.utils.user import RealUser, SynthUser, User
 from EvoMusic.usrapprox.utils.user_manager import UserManager
 from EvoMusic.usrapprox.utils.utils import ScoreToFeedback

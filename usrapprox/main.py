@@ -1,6 +1,6 @@
 import json
 from tqdm import tqdm
-from EvoMusic.usrapprox.utils.config import TrainConfig, UserConfig
+from EvoMusic.configuration import TrainConfig, UserConfig
 from EvoMusic.usrapprox.utils.user import RealUser, SynthUser, User
 from EvoMusic.usrapprox.utils.user_manager import UserManager
 from EvoMusic.usrapprox.utils.user_train_manager import UsersTrainManager

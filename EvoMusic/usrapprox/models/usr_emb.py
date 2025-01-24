@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from EvoMusic.usrapprox.utils.config import AlignerV2Config, UserConfig
+from EvoMusic.configuration import AlignerV2Config, UserConfig
 from EvoMusic.user_embs.model import AlignerV2
 
 
