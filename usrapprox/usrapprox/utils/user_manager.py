@@ -11,9 +11,6 @@ from torch.utils.data import DataLoader
 from torch.nn import functional as F
 from tqdm import tqdm
 
-from usrapprox.usrapprox.models.aligner_v2 import AlignerV2Wrapper
-
-# from usrapprox.usrapprox.models.probabilistic import probabilistic_model_torch
 from usrapprox.usrapprox.models.usr_emb import UsrEmb
 from usrapprox.usrapprox.utils.config import AlignerV2Config, UserConfig, TrainConfig
 from usrapprox.usrapprox.utils.dataset import (

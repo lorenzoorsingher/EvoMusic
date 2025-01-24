@@ -4,7 +4,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
-from usrapprox.usrapprox.models.aligner_v2 import AlignerV2Wrapper
 from usrapprox.usrapprox.models.usr_emb import UsrEmb
 from usrembeds.datautils.dataset import ContrDatasetMERT
 

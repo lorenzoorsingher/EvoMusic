@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
 
 from usrapprox.usrapprox.utils.config import AlignerV2Config, UserConfig
 from usrembeds.models.model import AlignerV2
