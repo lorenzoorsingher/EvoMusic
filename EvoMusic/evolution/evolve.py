@@ -85,13 +85,15 @@ class MusicEvolver:
                     "problem": self.problem,
                     "popsize": config.search.population_size,
                     "operators": [
-                        OnePointCrossOver(self.problem, tournament_size=4),
-                        GaussianMutation(self.problem, stdev=5, mutation_probability=0.5),
+                        OnePointCrossOver(self.problem, tournament_size=4, cross_over_rate=0.5),
+                        GaussianMutation(self.problem, stdev=20, mutation_probability=1),
                     ],
                     "elitist": True,
+                    "re_evaluate": None
                 }
+                # musicgen std vectors has 18 as mean std and 41 as max
                 new_params = config.search.evotorch
-                self.problem.epoch_pop = default["popsize"] * len(default["operators"])
+                self.problem.epoch_pop = 0
                 params = {**default, **new_params}
                 self.optimizer = GeneticAlgorithm(**params)
             else:
