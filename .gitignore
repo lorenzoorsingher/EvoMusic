@@ -1,3 +1,8 @@
+runs/
+
+*.json
+*.csv
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -164,6 +169,18 @@ cython_debug/
 # Data
 
 *.wav
+*.mp3
 *.json
+*.zip
+*.csv
+*.pt
+*.pth
+*.rar
 
-generated_audio/
+# wandb
+wandb/
+
+# exceptions
+!usrembeds/data/splits.json
+!usrembeds/data/clean_stats.csv
+!usrembeds/exp/*
