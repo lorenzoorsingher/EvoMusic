@@ -171,6 +171,7 @@ cython_debug/
 *.wav
 *.mp3
 *.json
+generated_audio/
 *.zip
 *.csv
 *.pt
@@ -184,3 +185,5 @@ wandb/
 !usrembeds/data/splits.json
 !usrembeds/data/clean_stats.csv
 !usrembeds/exp/*
+config.yaml
+conf.yaml
