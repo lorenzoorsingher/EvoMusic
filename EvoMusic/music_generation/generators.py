@@ -127,6 +127,10 @@ class MusicGenerator:
             Returns:
                 str: system path to the generated audio
         """
+        # check if the output directory exists
+        if not os.path.exists(self.config.output_dir):
+            os.makedirs(self.config.output_dir)
+        
         base_name = self.config.name if name is None else name + "_" + self.config.name
         return os.path.join(
             self.config.output_dir,
@@ -304,7 +308,7 @@ class MusicGenPipeline(MusicGenerator):
 if __name__ == "__main__":
     config = c.load_yaml_config("example_conf/test_music_generation_config.yaml")
 
-    TEST = "riffusion"  # "riffusion"s
+    TEST = "musicgen"  # "riffusion"s
 
     output_dir = "generated_audio"
     os.makedirs(output_dir, exist_ok=True)
