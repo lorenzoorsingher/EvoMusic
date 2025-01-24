@@ -1,17 +1,16 @@
-import json
 import os
+import json
 import torch
-import pandas as pd
-import librosa
-import numpy as np
-import scipy.signal as sps
-
-
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
-from random import randint
 
-import concurrent.futures  # Added for multi-threading
+
+import pandas as pd
+import numpy as np
+from random import randint
+import concurrent.futures
+
+from EvoMusic.usrapprox.models.usr_emb import UsrEmb
 
 
 class ContrDatasetMERT(Dataset):
@@ -198,71 +197,208 @@ class ContrDatasetMERT(Dataset):
                 neglist.append(neg_emb)
 
         posemb = torch.Tensor(poslist)
+        print(len(poslist))
+        print(len(neglist))
         negemb = torch.Tensor(neglist)
+
 
         return idx, posemb, negemb, weight
 
+class AllSongsDataset(Dataset):
+    def __init__(self, splits_path, embs_path, partition="train"):
+        self.embs_path = embs_path
+        with open(splits_path, "r") as f:
+            splits = json.load(f)
+        self.splits = splits[partition]
 
-class ContrDatasetOL3(Dataset):
+    def __getitem__(self, index):
+        # Return pairs of embeddings (index and index+1)
+        embedding1 = self.__get_embedding(index)
+        embedding2 = self.__get_embedding(index)  # Ensure valid index
+        return torch.Tensor([embedding1, embedding2]), index
+
+    def __len__(self):
+        # return len(self.splits)
+        return 300
+
+    def __get_embedding(self, idx):
+        song_id = self.splits[idx]
+        emb_file = os.path.join(self.embs_path, f"{song_id}.json")
+        if os.path.isfile(emb_file):
+            try:
+                with open(emb_file, "r") as f:
+                    data = json.load(f)
+                    if song_id in data:
+                        return data[song_id][0]
+                    else:
+                        print("No embeddings for song_id")
+                        return [0.0]
+            except:
+                print("Error reading file")
+                return [0.0]
+        else:
+            print("File does not exist")
+            return [0.0]
+
+
+class UserDefinedContrastiveDataset(Dataset):
+    def __init__(
+        self,
+        alignerV2: UsrEmb,
+        splits_path,
+        embs_path,
+        user_id=0,
+        npos=1,
+        nneg=1,
+        batch_size=128,
+        num_workers=10,
+        partition="train",
+        random_pool=None,
+    ):
+        if random_pool != None:
+            assert random_pool < 30, "Random pool must be less than 30"
+        self.random_pool = random_pool
+
+        self.embs_path = embs_path
+
+        with open(splits_path, "r") as f:
+            splits = json.load(f)
+        self.splits = splits[partition]
+        self.index_to_song_id = {
+            idx: song_id for idx, song_id in enumerate(self.splits)
+        }
+
+        all_songs_dataset = AllSongsDataset(splits_path, embs_path, partition)
+        dataloader = DataLoader(
+            all_songs_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+        )
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        alignerV2.to(device)
+
+        self.positive_samples = []
+        self.negative_samples = []
+
+        # Process feedback for song pairs
+        with torch.no_grad():
+            for emb, indices in tqdm(dataloader, desc="Processing Feedback"):
+                emb = emb.to(device)
+                # index_tensor = torch.LongTensor([user_id] * emb.shape[0]).to(device)
+
+                # batch = torch.cat((emb1, emb2), dim=1)
+                batch = emb
+                _, _, _, feedback_scores = alignerV2(user_id, batch)
+
+                feedback_scores = feedback_scores.cpu().tolist()
+                for idx, score in zip(indices.tolist(), feedback_scores):
+                    song_id = self.index_to_song_id[idx]
+                    # for score in score_vector:
+                    if score[0] > 0:
+                        self.positive_samples.append((song_id, score[0]))
+                    else:
+                        self.negative_samples.append((song_id, score[0]))
+
+        self.npos = npos
+        self.nneg = nneg
+
+    def __getitem__(self, index):
+        assert len(self.positive_samples) >= self.npos, "Not enough positive samples."
+        assert len(self.negative_samples) >= self.nneg, "Not enough negative samples."
+
+        # set two value to randomly n,m with sum up to 30
+        if self.random_pool != None:
+            n, m = 0, 0
+            while n + m != 30:
+                n = torch.randint(1, 30, (1,))
+                m = 30 - n
+
+            pos_samples = torch.randperm(len(self.positive_samples))[:m]
+            neg_samples = torch.randperm(len(self.negative_samples))[:n]
+        else:
+            pos_samples = torch.randperm(len(self.positive_samples))[: self.npos]
+            neg_samples = torch.randperm(len(self.negative_samples))[: self.nneg]
+            positives = [
+                self.__get_embedding(self.positive_samples[i][0]) for i in pos_samples
+            ]
+            negatives = [
+                self.__get_embedding(self.negative_samples[i][0]) for i in neg_samples
+            ]
+
+        positives = torch.Tensor(positives)
+        negatives = torch.Tensor(negatives)
+
+        merged = torch.cat((positives, negatives), dim=0)
+
+        return merged
+
+    def __len__(self):
+        # return len(self.positive_samples) #+ len(self.negative_samples)
+        return 300
+
+    def __get_embedding(self, song_id):
+        emb_file = os.path.join(self.embs_path, f"{song_id}.json")
+        if os.path.isfile(emb_file):
+            try:
+                with open(emb_file, "r") as f:
+                    data = json.load(f)
+                    if song_id in data:
+                        return data[song_id][0]
+                    else:
+                        print("No embeddings for song_id")
+                        return [0.0]
+            except:
+                print("Error reading file")
+                return [0.0]
+        else:
+            print("File does not exist")
+            return [0.0]
+
+
+class ContrDatasetWrapper(ContrDatasetMERT):
     def __init__(
         self,
         embs_dir,
         stats_path,
+        split,
+        usrs,
         nneg=10,
         multiplier=10,
         transform=None,
+        preload=False,  # New parameter for preloading
+        max_workers=12,
     ):
         self.embs_dir = embs_dir
         self.stats_path = stats_path
         self.nneg = nneg
         self.multiplier = multiplier
         self.transform = transform
+        self.preload = preload  # Store the preload flag
+        self.max_workers = max_workers  # Number of threads
 
-        print("[DATASET] Loading files and keys")
-        embedding_files = [
-            f for f in os.listdir(embs_dir) if os.path.isfile(os.path.join(embs_dir, f))
-        ]
-        embedding_files.remove("allkeys.json")
+        print("[DATASET] Creating dataset")
 
-        with open(os.path.join(embs_dir, "allkeys.json"), "r") as f:
-            self.allkeys = json.load(f)
+        # Set embedding keys from the split
+        self.emb_keys = split
 
-        self.allkeys.remove("metadata")
-
-        # del self.allkeys["metadata"]
-        # mapping the keys to a list because dict lookup is just too slow
-        self.emb_map = {key: idx for idx, key in enumerate(self.allkeys)}
-
-        self.emb_list = [[] for _ in self.allkeys]
-
-        print("[DATASET] Loading embeddings")
-        for num, file in enumerate(tqdm(embedding_files)):
-            with open(os.path.join(embs_dir, file), "r") as f:
-                data = json.load(f)
-                for key, value in data.items():
-                    if key != "metadata":
-                        # print(len(value[0]))
-                        # if len(value[0]) != 512:
-                        #     breakpoint()
-                        self.emb_list[self.emb_map[key]].extend(value)
-
-        print("[DATASET] Loading users stats")
-        # load the stats
+        # Load the stats
         self.stats = pd.read_csv(stats_path)
         self.stats["count"] = self.stats["count"].astype(int)
 
-        # remove tracks with no embeddings
-        self.stats = self.stats[self.stats["id"].isin(self.allkeys)].reset_index(
+        # Remove entries with no embeddings
+        self.stats = self.stats[self.stats["id"].isin(self.emb_keys)].reset_index(
             drop=True
         )
 
+        # Remove users not in the split
+        # self.stats = self.stats[self.stats["userid"].isin(usrs)]
+        self.stats = self.stats[self.stats["userid"] == self.stats["userid"].iloc[usrs]]
+
         self.idx2usr = self.stats["userid"].unique().tolist()
 
-        # Group by 'userid' and aggregate 'id' into a list
-        # self.user2songs = self.stats.groupby("userid")["id"].apply(list).to_dict()
-
-        # breakpoint()
-
+        # Compute user stats
         self.usersums = self.stats.groupby("userid")["count"].sum()
         self.userstd = self.stats.groupby("userid")["count"].std()
         self.usercount = self.stats.groupby("userid")["count"].count()
@@ -272,226 +408,18 @@ class ContrDatasetOL3(Dataset):
             .apply(lambda x: list(zip(x["id"], x["count"])))
             .to_dict()
         )
-        # breakpoint()
-        # number of users
+
+        # Number of users
         self.nusers = self.stats["userid"].nunique()
 
-        # breakpoint()
-
-    def __len__(self):
-        return self.nusers * self.multiplier
-
-    def __getitem__(self, idx):
-
-        idx = idx % self.nusers
-        # TODO: implement way to use playcount to select positive samples
-        usr = self.idx2usr[idx]
-        # breakpoint()
-        pos = self.user2songs[usr]
-        # count = torch.Tensor(count).type(torch.int32)
-        neg = list(set(self.allkeys) - set(pos))
-
-        pos_sample = pos[randint(0, len(pos) - 1)]
-        posset, count = pos_sample
-
-        mean = self.usersums[usr] / self.usercount[usr]
-        top70 = mean + self.userstd[usr]
-        weight = min(1, count / top70)
-        # weight = torch.Tensor([weight])
-        # breakpoint()
-
-        negset = np.random.choice(neg, size=self.nneg, replace=False)
-
-        poslist = []
-        # for pos in posset:
-        #     embs = self.emb_list[self.emb_map[pos]]
-        #     # if len(embs) == 0:
-        #     #     print(f"Empty embedding for {pos}")
-        #     #     breakpoint()
-        #     poslist.append(embs[randint(0, len(embs) - 1)])
-
-        embs = self.emb_list[self.emb_map[posset]]
-        poslist.append(embs[randint(0, len(embs) - 1)])
-
-        neglist = []
-        for neg in negset:
-            embs = self.emb_list[self.emb_map[neg]]
-            # if len(embs) == 0:
-            #     print(f"Empty embedding for {neg}")
-            #     breakpoint()
-            neglist.append(embs[randint(0, len(embs) - 1)])
-
-        # neglist = [
-        #     self.emb_list[self.emb_map[neg]][
-        #         randint(0, len(self.emb_list[self.emb_map[neg]]))
-        #     ]
-        #     for neg in negset
-        # ]
-
-        posemb = torch.Tensor(poslist)
-        negemb = torch.Tensor(neglist)
-
-        # print(negemb.shape)
-        # breakpoint()
-        return idx, posemb, negemb, weight
-
-
-class MusicDataset(Dataset):
-    def __init__(
-        self,
-        data_dir,
-        type="audio",
-        audio_len=1,
-        resample=None,
-        nsamples=None,
-        repeat=1,
-        transform=None,
-    ):
-        self.data_dir = data_dir
-        self.type = type
-        self.audio_len = audio_len
-        self.resample = resample
-        self.repeat = repeat
-
-        self.transform = transform
-
-        # load the songs
-        self.tracks_paths = [
-            os.path.join(data_dir, track)
-            for track in os.listdir(data_dir)
-            if track.endswith(".mp3")
-        ]
-
-        if nsamples is not None:
-            self.tracks_paths = self.tracks_paths[:nsamples]
-
-    def __len__(self):
-        return len(self.tracks_paths) * self.repeat
+        # Preload embeddings into memory if preload=True
+        if self.preload:
+            print("[DATASET] Preloading embeddings into RAM using multi-threading")
+            self._preload_embeddings()
 
     def __getitem__(self, idx):
+        _, posemb, negemb, _ = super().__getitem__(idx)
 
-        idx = idx % len(self.tracks_paths)
-
-        stat = {}
-        track_path = self.tracks_paths[idx]
-        stat["id"] = track_path.split("/")[-1].split("_")[0]
-
-        # Convert mp3 to wav
-        y, sr = librosa.load(track_path, sr=None)
-        stat["sr"] = sr
-        if self.resample is not None:
-            # Resample data
-            number_of_samples = round(len(y) * float(self.resample) / sr)
-            y = sps.resample(y, number_of_samples)
-            stat["sr"] = self.resample
-
-        # if audio is too short, repeat it
-        pad_times = int((sr * self.audio_len) / len(y))
-        y = np.tile(y, pad_times + 1)
-
-        # take random audio_len sec long snippet
-        snip_len = min(len(y), sr * self.audio_len) - 1
-        snip_idx = np.random.randint(0, len(y) - snip_len)
-        snip = y[snip_idx : snip_idx + snip_len]
-
-        return stat, snip
+        return torch.cat((posemb, negemb), dim=0)
 
 
-def get_dataloaders(
-    embs_path,
-    stats_path,
-    splits_path,
-    nneg,
-    mul,
-    batch_size,
-    workers=8,
-):
-
-    with open(splits_path, "r") as f:
-        splits = json.load(f)
-
-    train = splits["train"]
-    test = splits["test"]
-    users = splits["users"]
-
-    train_dataset = ContrDatasetMERT(
-        embs_path,
-        stats_path,
-        split=train,
-        usrs=users,
-        nneg=nneg,
-        multiplier=mul,
-    )
-
-    test_dataset = ContrDatasetMERT(
-        embs_path,
-        stats_path,
-        split=test,
-        usrs=users,
-        nneg=nneg,
-        multiplier=mul,
-    )
-
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=workers,
-    )
-
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=workers,
-    )
-
-    return train_loader, test_loader, len(users)
-
-
-if __name__ == "__main__":
-
-    music_path = "../scraper/music"
-    membs_path = "usrembeds/data/embeddings/embeddings_full_split"
-    stats_path = "usrembeds/data/clean_stats.csv"
-    splits_path = "usrembeds/data/splits.json"
-
-    with open(splits_path, "r") as f:
-        splits = json.load(f)
-
-    train = splits["train"]
-    test = splits["test"]
-    users = splits["users"]
-
-    train_dataset = ContrDatasetMERT(
-        membs_path,
-        stats_path,
-        split=train,
-        usrs=users,
-    )
-
-    test_dataset = ContrDatasetMERT(
-        membs_path,
-        stats_path,
-        split=test,
-        usrs=users,
-    )
-
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=8,
-        shuffle=True,
-        num_workers=8,
-    )
-
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset,
-        batch_size=8,
-        shuffle=True,
-        num_workers=8,
-    )
-
-    breakpoint()
-    for track in tqdm(train_loader):
-        idx, posemb, negemb, weights = track
-        # breakpoint()

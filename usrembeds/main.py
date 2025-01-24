@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from datautils.dataset import ContrDatasetMERT, get_dataloaders
 from models.model import Aligner, AlignerV2
 from utils import get_args, gen_run_name
+
 # clip gradient
 from torch.nn.utils import clip_grad_norm_
 
@@ -106,7 +107,9 @@ def eval_auc_loop(model, val_loader, weight=0):
     return roc_auc, pr_auc, val_losses
 
 
-def train_loop(model, train_loader, opt, grads, weight, lt=False, log=False, log_every=100):
+def train_loop(
+    model, train_loader, opt, grads, weight, lt=False, log=False, log_every=100
+):
 
     model.train()
 
@@ -298,7 +301,7 @@ if __name__ == "__main__":
             opt = optim.AdamW(model.parameters(), lr=LR)
 
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            opt, "max", factor=0.2, patience=PAT//2, verbose=True
+            opt, "max", factor=0.2, patience=PAT // 2, verbose=True
         )
 
         config = {

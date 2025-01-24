@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class AlignerV2(nn.Module):
     def __init__(
         self,
@@ -19,11 +20,13 @@ class AlignerV2(nn.Module):
     ):
         super(AlignerV2, self).__init__()
 
+        self.cosine_similarity = nn.CosineSimilarity(dim=2, eps=1e-6)
+
         self.prj_type = prj_type
         self.prj_size = prj_size
         self.aggragation = aggragation
         self.noise_level = noise_level
-        
+
         num_heads = 1
 
         if aggragation == "gating":
@@ -40,19 +43,28 @@ class AlignerV2(nn.Module):
             self.gate_out_norm = nn.LayerNorm(prj_size)
         elif aggragation == "cross-attention":
             # use attention to compute weights for each dimension of the music embeddings
-            self.gate = nn.MultiheadAttention(
-                prj_size, num_heads, batch_first=True
-            )
+            self.gate = nn.MultiheadAttention(prj_size, num_heads, batch_first=True)
             self.gate_norm = nn.LayerNorm(prj_size)
         elif aggragation == "weighted":
             self.weights = nn.Parameter(torch.ones(13))
         elif aggragation == "GRU":
-            self.gru = nn.GRU(prj_size, hidden_size, num_layers=num_heads, batch_first=True, dropout=drop)
+            self.gru = nn.GRU(
+                prj_size,
+                hidden_size,
+                num_layers=num_heads,
+                batch_first=True,
+                dropout=drop,
+            )
             self.linear = nn.Linear(hidden_size, prj_size)
             self.ln_gru = nn.LayerNorm(prj_size)
         elif aggragation == "self-cross-attention":
             self.self_att = nn.TransformerEncoderLayer(
-                prj_size, num_heads, batch_first=True, activation=F.gelu, dim_feedforward=hidden_size, dropout=drop
+                prj_size,
+                num_heads,
+                batch_first=True,
+                activation=F.gelu,
+                dim_feedforward=hidden_size,
+                dropout=drop,
             )
             self.cross_att = nn.MultiheadAttention(
                 prj_size, num_heads, batch_first=True
@@ -61,18 +73,17 @@ class AlignerV2(nn.Module):
         elif aggragation == "learned_query":
             self.query = nn.Parameter(torch.randn(2, prj_size))
             self.attention = nn.MultiheadAttention(
-                prj_size, num_heads,
-                batch_first=True, dropout=drop
+                prj_size, num_heads, batch_first=True, dropout=drop
             )
             self.ln_att = nn.LayerNorm(prj_size)
-            
+
         elif aggragation != "mean":
             raise ValueError(f"[MODEL] Invalid aggregation type: {aggragation}")
 
         print(f"[MODEL] Using aggregation type: {aggragation}")
 
         self.drop = nn.Dropout(drop)
-        
+
         self.users = nn.Embedding(n_users, emb_size)
 
         self.linear1 = nn.Linear(emb_size, hidden_size)
@@ -85,7 +96,7 @@ class AlignerV2(nn.Module):
         self.temp = temp
         if lt:
             print("[MODEL] Using learnable temperature")
-            self.temp = nn.Parameter(torch.log(torch.tensor(1/temp)))
+            self.temp = nn.Parameter(torch.log(torch.tensor(1 / temp)))
 
         if self.prj_type == "linear":
             self.fc3 = nn.Linear(prj_size, hidden_size)
@@ -121,7 +132,7 @@ class AlignerV2(nn.Module):
 
         batch_size = music_embs.size(0)
         N_EMB = music_embs.size(1)
-        
+
         if self.training and self.noise_level > 0:
             music_embs = music_embs + torch.randn_like(music_embs) * self.noise_level
 
@@ -132,20 +143,26 @@ class AlignerV2(nn.Module):
             music_x = (music_embs * self.weights).sum(dim=3)
         elif self.aggragation == "gating":
             # [batch, NPOS+NNEG, 13, emb_size] -> [batch, NPOS+NNEG, 13*emb_size]
-            music_embs_reshaped = music_embs.view(batch_size, N_EMB, self.prj_size*13)
+            music_embs_reshaped = music_embs.view(batch_size, N_EMB, self.prj_size * 13)
             # compute weights for each dimension of the music embeddings to be normalized
-            weights = self.gate(music_embs_reshaped).view(batch_size, N_EMB, 13, self.prj_size)
+            weights = self.gate(music_embs_reshaped).view(
+                batch_size, N_EMB, 13, self.prj_size
+            )
             # normalize over the 13 dimensions
             weights = F.softmax(weights, dim=2)
             # apply weighted sum to the music embeddings
-            music_embs = self.gate_norm(music_embs + F.gelu(self.gate_transform(music_embs)))
+            music_embs = self.gate_norm(
+                music_embs + F.gelu(self.gate_transform(music_embs))
+            )
             music_x = (weights * music_embs).sum(dim=2)
             music_x = self.gate_out_norm(music_x)
         elif self.aggragation == "gating-tanh":
             # [batch, NPOS+NNEG, 13, emb_size] -> [batch, NPOS+NNEG, 13*emb_size]
-            music_embs_reshaped = music_embs.view(batch_size, N_EMB, self.prj_size*13)
+            music_embs_reshaped = music_embs.view(batch_size, N_EMB, self.prj_size * 13)
             # compute weights for each dimension of the music embeddings to be normalized
-            weights = self.gate(music_embs_reshaped).view(batch_size, N_EMB, 13, self.prj_size)
+            weights = self.gate(music_embs_reshaped).view(
+                batch_size, N_EMB, 13, self.prj_size
+            )
             # normalize over the 13 dimensions
             weights = F.tanh(weights)
             # apply weighted sum to the music embeddings
@@ -156,9 +173,11 @@ class AlignerV2(nn.Module):
             music_x = self.gate_out_norm(music_x)
         elif self.aggragation == "gating-tanh":
             # [batch, NPOS+NNEG, 13, emb_size] -> [batch, NPOS+NNEG, 13*emb_size]
-            music_embs_reshaped = music_embs.view(batch_size, N_EMB, self.prj_size*13)
+            music_embs_reshaped = music_embs.view(batch_size, N_EMB, self.prj_size * 13)
             # compute weights for each dimension of the music embeddings to be normalized
-            weights = self.gate(music_embs_reshaped).view(batch_size, N_EMB, 13, self.prj_size)
+            weights = self.gate(music_embs_reshaped).view(
+                batch_size, N_EMB, 13, self.prj_size
+            )
             # normalize over the 13 dimensions
             weights = F.tanh(weights)
             # apply weighted sum to the music embeddings
@@ -171,24 +190,36 @@ class AlignerV2(nn.Module):
             # use user embeddings as query and music embeddings as key and value
             # urs [batch, prj_size] -> [batch * NPOS+NNEG, 1, prj_size]
             # music [batch, NPOS+NNEG, 13, emb_size] -> [batch * NPOS+NNEG, 13, emb_size]
-            user_queries = usr_x.unsqueeze(1).repeat(1, N_EMB, 1).view(batch_size * N_EMB, 1, self.prj_size)
+            user_queries = (
+                usr_x.unsqueeze(1)
+                .repeat(1, N_EMB, 1)
+                .view(batch_size * N_EMB, 1, self.prj_size)
+            )
             music_vals = music_embs.view(batch_size * N_EMB, 13, self.prj_size)
             music_x, weights = self.gate(user_queries, music_vals, music_vals)
-            music_x = music_x.view(batch_size, N_EMB, self.prj_size) + music_embs.mean(dim=2)
+            music_x = music_x.view(batch_size, N_EMB, self.prj_size) + music_embs.mean(
+                dim=2
+            )
             music_x = self.gate_norm(music_x)
         elif self.aggragation == "GRU":
             music_gru_input = music_embs.view(batch_size * N_EMB, 13, self.prj_size)
             music_x, _ = self.gru(music_gru_input)
-            music_x = music_x[:, -1, :].view(batch_size, N_EMB, self.prj_size) + music_embs.mean(dim=2)
+            music_x = music_x[:, -1, :].view(
+                batch_size, N_EMB, self.prj_size
+            ) + music_embs.mean(dim=2)
             music_x = self.ln_gru(music_x)
         elif self.aggragation == "self-cross-attention":
             music_embs_input = music_embs.view(batch_size * N_EMB, 13, self.prj_size)
             music_self_att = self.self_att(music_embs_input)
-            
+
             music_vals = music_self_att
-            user_queries = usr_x.unsqueeze(1).repeat(1, N_EMB, 1).view(batch_size * N_EMB, 1, self.prj_size)
+            user_queries = (
+                usr_x.unsqueeze(1)
+                .repeat(1, N_EMB, 1)
+                .view(batch_size * N_EMB, 1, self.prj_size)
+            )
             music_x, _ = self.cross_att(user_queries, music_vals, music_vals)
-            
+
             music_x = music_x.view(batch_size, N_EMB, self.prj_size)
             music_self_att = music_self_att.view(batch_size, N_EMB, 13, self.prj_size)
             music_x = music_x + music_self_att.mean(dim=2)
@@ -197,9 +228,10 @@ class AlignerV2(nn.Module):
             query = self.query.unsqueeze(0).repeat(batch_size * N_EMB, 1, 1)
             music_embs_input = music_embs.view(batch_size * N_EMB, 13, self.prj_size)
             music_x, _ = self.attention(query, music_embs_input, music_embs_input)
-            music_x = music_x.view(batch_size, N_EMB, -1, self.prj_size).mean(dim=2) + music_embs.mean(dim=2)
+            music_x = music_x.view(batch_size, N_EMB, -1, self.prj_size).mean(
+                dim=2
+            ) + music_embs.mean(dim=2)
             self.ln_att(music_x)
-        
 
         if self.prj_type == "linear":
             music_x = self.fc4(self.drop(F.gelu(self.fc3(music_x)))) + music_x
@@ -221,9 +253,9 @@ class AlignerV2(nn.Module):
             music_x = music_x.permute(0, 2, 1)
             music_x = self.bn(music_x)
             music_x = music_x.permute(0, 2, 1)
-            
+
         if self.training:
-            drop_mask = torch.rand(self.prj_size) < self.drop.p
+            drop_mask = (torch.rand(self.prj_size) < self.drop.p).to("cuda")
             music_x = music_x * drop_mask
             usr_x = usr_x * drop_mask
 
@@ -236,6 +268,33 @@ class AlignerV2(nn.Module):
         opt_state = model_savefile["optimizer"]
 
         return state_dict, config, opt_state
+
+    def calculate_score(self, user_embedding, music_embedding):
+        """
+        Calculate the score by computing the cosine similarity between the user and music embeddings.
+
+        Args:
+            user_embedding (torch.Tensor): The user embedding.
+            music_embedding (torch.Tensor): The music embedding.
+
+        Returns:
+            torch.Tensor: The score.
+        """
+
+        out = user_embedding.unsqueeze(1)
+        posemb_out = music_embedding[:, 0, :].unsqueeze(dim=1)
+        negemb_out = music_embedding[:, 1:, :]
+
+        possim = self.cosine_similarity(out, posemb_out)
+
+        out = out.repeat(1, negemb_out.shape[1], 1)
+        negsim = self.cosine_similarity(out, negemb_out)
+
+        negsim = negsim.view(-1, negemb_out.shape[1])
+
+        music_score = torch.cat((possim, negsim), dim=1)
+
+        return music_score
 
 
 class Aligner(nn.Module):

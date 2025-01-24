@@ -1,3 +1,4 @@
+import json
 import torch
 import torchopenl3
 import numpy as np
@@ -9,7 +10,7 @@ from sklearn.metrics import roc_curve, roc_auc_score, average_precision_score
 from tqdm import tqdm
 
 from datautils.dataset import ContrDatasetMERT
-from models.model import Aligner
+from models.model import Aligner, AlignerV2
 
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
@@ -18,20 +19,21 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # use GPU if we can!
 if __name__ == "__main__":
 
     # load model and config from checkpoint
-    LOAD = "usrembeds/checkpoints/MERT_full_gating_linear_checkpoint.pt"
-    model_state, setup, _ = Aligner.load_model(LOAD)
+    # LOAD = "usrembeds/checkpoints/MERT_full_gating_linear_checkpoint.pt"
+    LOAD = "usrembeds/checkpoints/run_20241227_151619_best.pt"
+    model_state, setup, _ = AlignerV2.load_model(LOAD)
 
     default = {
         "emb_size": 256,
         "batch_size": 64,
         "neg_samples": 20,
-        "temp": 0.5,
-        "learnable_temp": False,
+        "temp": 0.2,
+        "learnable_temp": True,
         "multiplier": 10,
         "weight": 0,
-        "prj": "linear",
-        "aggr": "gating",
-        "nusers": 1000,
+        "prj": "shared",
+        "aggr": "gating-tanh",
+        "nusers": 967,
         "prj_size": 768,
         "drop": 0.25,
         "lr": 0.001,
@@ -57,11 +59,20 @@ if __name__ == "__main__":
 
     membs_path = "usrembeds/data/embeddings/embeddings_full_split"
     stats_path = "clean_stats.csv"
+    splits_path = "usrembeds/data/splits.json"
     save_path = "usrembeds/checkpoints"
+
+    with open(splits_path, "r") as f:
+        splits = json.load(f)
+
+    test = splits["test"]
+    users = splits["users"]
 
     dataset = ContrDatasetMERT(
         membs_path,
         stats_path,
+        split=test,
+        usrs=users,
         nneg=NEG,
         multiplier=MUL,
         transform=None,
@@ -78,7 +89,7 @@ if __name__ == "__main__":
         num_workers=8,
     )
 
-    model = Aligner(
+    model = AlignerV2(
         n_users=NUSERS,
         emb_size=EMB_SIZE,
         prj_size=MUSIC_EMB_SIZE,

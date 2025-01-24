@@ -25,10 +25,14 @@ def get_model_path(input_repr, content_type, embedding_size):
 
 
 def load_audio_embedding_model(
-    input_repr, content_type, embedding_size,
+    input_repr,
+    content_type,
+    embedding_size,
 ):
     model = PytorchOpenl3(
-        input_repr=input_repr, embedding_size=embedding_size, content_type=content_type,
+        input_repr=input_repr,
+        embedding_size=embedding_size,
+        content_type=content_type,
     )
 
     weight_path = get_model_path(input_repr, content_type, embedding_size)
