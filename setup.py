@@ -41,6 +41,8 @@ setup(
         'soundfile==0.13.0',
         'gradio==3.36.1',
         'librosa==0.10.2.post1',
+        'umap-learn==0.5.7',
+        'tensorboard'
     ],
     python_requires='>=3.9',  # Specify the Python version requirement
     classifiers=[
