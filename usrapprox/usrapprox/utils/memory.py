@@ -45,6 +45,16 @@ class MemoryBuffer:
         self._current_index = 0
         self._stored_elements = 0
 
+    def to(self, device: torch.device):
+        """
+        Move the memory to a new device.
+
+        Args:
+            device (torch.device): The device to move the memory to.
+        """
+        if self._memory is not None:
+            self._memory = self._memory.to(device)
+
     @property
     def memory(self) -> torch.Tensor:
         """

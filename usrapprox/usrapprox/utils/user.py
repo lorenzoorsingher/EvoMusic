@@ -23,6 +23,9 @@ class User:
             raise ValueError("Memory already set.")
         self._memory = MemoryBuffer(memory_length)
 
+    def set_memory_device(self, device):
+        self._memory.to(device)
+
     def set_user_id(self, user_id: int):
         if self._user_id is not None:
             raise ValueError("User ID already set.")

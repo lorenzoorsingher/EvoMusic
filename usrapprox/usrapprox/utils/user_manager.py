@@ -149,6 +149,9 @@ class UserManager:
     def clear_memory(self, user: User):
         user.empty_memory()
 
+    def set_memory_device(self, user: User, device: torch.device):
+        user.set_memory_device(device)
+
     def user_step(self, user: User, batch: torch.Tensor):
         if isinstance(user, RealUser) or isinstance(user, SynthUser):
             user_embedding, embeddings, temperature, music_score = self.usr_emb(
@@ -210,10 +213,6 @@ class UsersTrainManager:
         self._last_used_user = None
         self._score_to_feedback = ScoreToFeedback(self.device)
 
-    # - memoria circolare canzoni x utente
-    # - gestione load/store utente
-    # - metodo per fare finetuning per utente n data una batch nuova
-    # - metodo per avere lo score (cosine) data una batch
 
     # infonce - nxtent
 

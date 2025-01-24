@@ -13,6 +13,7 @@ class UsersTrainManager:
         self,
         users: list[RealUser, SynthUser],
         users_config: UserConfig,
+        train_config: TrainConfig,
         writer: SummaryWriter,
         aligner_config: AlignerV2Config = AlignerV2Config(),
         device: str = "cuda",
@@ -29,6 +30,9 @@ class UsersTrainManager:
             aligner_config=aligner_config,
             device=device,
         )
+
+        self._train_config = train_config
+        self._optimizer = None
 
     def __feedback_loss(
         self,
@@ -76,10 +80,27 @@ class UsersTrainManager:
 
     counter = 0
 
+    def __train_one_step(self, tracks: torch.Tensor, user: User):
+        _, _, temperature, music_score = self._user_manager.user_step(user, tracks)
+
+        _, _, _, target_score = self._user_manager.feedback_step(user, tracks)
+
+        target_feedback = self._score_to_feedback.get_feedback(target_score).to(
+            self.device
+        )
+
+        loss = self.__feedback_loss(music_score, target_feedback, temperature)
+
+        self._optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self._user_manager.usr_emb.users.parameters(), 5)
+        self._optimizer.step()
+
+        return loss.item()
+
     def __train(
         self,
         train_loader: torch.utils.data.DataLoader,
-        optimizer: torch.optim.Optimizer,
         user: User,
         epoch: int,
     ):
@@ -89,41 +110,23 @@ class UsersTrainManager:
 
         self._user_manager.usr_emb.eval()
         for tracks in tqdm(train_loader, desc="Training", leave=False):
-            # tracks = torch.cat((posemb, negemb), dim=1)
-            # tracks = tracks.to(self.device)
-            # print(tracks.shape)
-
             self._user_manager.update_memory(user, tracks)
             tracks = self._user_manager.get_memory(user)
             tracks = tracks.to(self.device)
 
-            _, _, temperature, music_score = self._user_manager.user_step(user, tracks)
-
-            # ids_aligner = torch.LongTensor([user.user_id] * tracks.shape[0]).to(
-            #     self.device
-            # )
-            _, _, _, target_score = self._user_manager.feedback_step(user, tracks)
-
-            target_feedback = self._score_to_feedback.get_feedback(target_score).to(
-                self.device
-            )
-
-            loss = self.__feedback_loss(music_score, target_feedback, temperature)
-
-            losses.append(loss.item())
-
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(
-                self._user_manager.usr_emb.users.parameters(), 5
-            )
-            optimizer.step()
+            loss = self.__train_one_step(tracks, user)
+            losses.append(loss)
 
         self.writer.add_scalar(
             "Loss/Training", torch.tensor(losses).mean().item(), epoch
         )
 
-    def __eval(self, val_loader: torch.utils.data.DataLoader, user: User, epoch: int):
+    def __eval(
+        self,
+        val_loader: torch.utils.data.DataLoader | torch.Tensor,
+        user: User,
+        epoch: int,
+    ):
 
         losses = []
 
@@ -133,11 +136,32 @@ class UsersTrainManager:
 
         self._user_manager.usr_emb.eval()
         with torch.no_grad():
-            for i, (tracks) in enumerate(
-                tqdm(val_loader, desc="Evaluating", leave=False)
-            ):
-                # tracks = torch.cat((posemb, negemb), dim=1)
-                tracks = tracks.to(self.device)
+            if isinstance(val_loader, torch.utils.data.DataLoader):
+                for i, (tracks) in enumerate(
+                    tqdm(val_loader, desc="Evaluating", leave=False)
+                ):
+                    # tracks = torch.cat((posemb, negemb), dim=1)
+                    tracks = tracks.to(self.device)
+
+                    _, _, temperature, music_score = self._user_manager.user_step(
+                        user, tracks
+                    )
+
+                    _, _, _, target_score = self._user_manager.feedback_step(
+                        user, tracks
+                    )
+
+                    # Calculate loss
+                    target_feedback = self._score_to_feedback.get_feedback(target_score)
+                    loss = self.__feedback_loss(
+                        music_score, target_feedback, temperature
+                    )
+                    losses.append(loss.item())
+
+                    music_scores = torch.cat((music_scores, music_score))
+                    target_scores = torch.cat((target_scores, target_score))
+            elif isinstance(val_loader, torch.Tensor):
+                tracks = val_loader.to(self.device)
 
                 _, _, temperature, music_score = self._user_manager.user_step(
                     user, tracks
@@ -159,27 +183,39 @@ class UsersTrainManager:
             user.model_reference_id
         ]
 
-        # Expand aligner_weight to match the dimensions of usr_emb_weight
-        # aligner_weight = aligner_weight.unsqueeze(0)  # Shape: [1, EMB_SIZE]
+        # Compute ABS and MSE between user and aligner weights
+        abs_diff = torch.abs(usr_emb_weight - aligner_weight).mean().item()
+        mse_diff = torch.nn.functional.mse_loss(usr_emb_weight, aligner_weight).item()
 
-        # Compute cosine similarity
+        # Compute cosine similarity between user and aligner weights
         cosine_sim = torch.nn.functional.cosine_similarity(
             usr_emb_weight, aligner_weight, dim=-1
         )
 
         average_cosine_similarity_on_model = cosine_sim.mean().item()
 
+        # Compute the mean loss
         losses = torch.tensor(losses).mean().item()
 
-        mse = torch.nn.functional.cosine_similarity(
+        # Compute the cosine similarity between the scores
+        cosine_scores = torch.nn.functional.cosine_similarity(
             torch.Tensor(music_scores), torch.Tensor(target_scores)
         ).mean()
 
+        # Log
+        self.writer.add_scalar("Validation/Abs Embedding", abs_diff, epoch)
+        self.writer.add_scalar("Validation/MSE Embedding", mse_diff, epoch)
         self.writer.add_scalar("Loss/Validation", losses, epoch)
         self.writer.add_scalar(
             "Validation/Cosine Model", average_cosine_similarity_on_model, epoch
         )
-        self.writer.add_scalar("Validation/Cosine Scores", mse, epoch)
+        self.writer.add_scalar("Validation/Cosine Scores", cosine_scores, epoch)
+
+    def __set_optimizer(self):
+        if self._optimizer is None:
+            self._optimizer = torch.optim.AdamW(
+                self._user_manager.usr_emb.users.parameters(), lr=self._train_config.lr
+            )
 
     def get_user(self, user_id: int):
         return self._user_manager[user_id]
@@ -187,26 +223,134 @@ class UsersTrainManager:
     def test_train(
         self,
         user: User,
-        train_config: TrainConfig,
     ):
         train_dataloader, test_dataloader = self._user_manager.load_datasets(
-            user, train_config
+            user, self._train_config
         )
 
-        optimizer = torch.optim.AdamW(
-            self._user_manager.usr_emb.users.parameters(), lr=train_config.lr
-        )
+        self.__set_optimizer()
 
         for epoch in tqdm(
-            range(train_config.epochs),
+            range(self._train_config.epochs),
             desc=f"Training user {user.uuid} | {user.user_id} | ref: {user.model_reference_id}",
         ):
-            self.__train(train_dataloader, optimizer, user, epoch)
+            self.__train(train_dataloader, user, epoch)
 
             self.__eval(test_dataloader, user, epoch)
 
-    def finetune():
-        raise NotImplementedError("Not implemented yet.")
+    def finetune(self, user: User, batch: torch.Tensor, epoch: int, eval: bool = True):
+        """
+        Batch is expected to be a tensor on `self.device`.
+        The memory is offloaded from the gpu to the cpu after each step of finetuning.
+
+        You can iterate on the same batch multiple times, to do so just set the `epochs` parameter in the `TrainConfig` object to something greater than 1.
+        """
+        """
+        - mettere i dati in memoria, non svuotarla MAI
+        - fare il train coi dati che hai, si itera per un numero di epoche n
+        """
+        self.__set_optimizer()
+
+        losses = []
+        for _ in tqdm(
+            range(self._train_config.epochs),
+            desc=f"Finetuning user {user.uuid} | {user.user_id} | ref: {user.model_reference_id}",
+        ):
+            loss = self.__train_one_step(batch, user)
+            losses.append(loss)
+
+        if eval:
+            self.__eval(batch, user, epoch)
+
+        self.writer.add_scalar(
+            "Loss/finetune_user", torch.tensor(losses).mean().item(), epoch
+        )
+
+    def get_user_score(self, user: User, batch: torch.Tensor):
+        """
+        NOT USED AS INTERNAL API OF THE CLASS.
+        Get the score of a user given a batch of tracks.
+
+        Args:
+            user (User): The user for which to get the score.
+            batch (torch.Tensor): The batch of tracks for which to get the score.
+
+        Returns:
+            user_embedding, embeddings, temperature, music_score
+        """
+
+        user_embedding, embeddings, temperature, music_score = (
+            self._user_manager.user_step(user, batch)
+        )
+
+        return user_embedding, embeddings, temperature, music_score
+
+    def get_reference_score(self, user: User, batch: torch.Tensor):
+        """
+        NOT USED AS INTERNAL API OF THE CLASS.
+        Get the score of a reference user given a batch of tracks.
+
+        Args:
+            user (User): The user for which to get the score.
+            batch (torch.Tensor): The batch of tracks for which to get the score.
+
+        Returns:
+            user_embedding, embeddings, temperature, music_score
+        """
+
+        user_embedding, embeddings, temperature, music_score = (
+            self._user_manager.feedback_step(user, batch)
+        )
+
+        return user_embedding, embeddings, temperature, music_score
+
+    def get_user_feedback(self, user: User, batch: torch.Tensor):
+        """
+        NOT USED AS INTERNAL API OF THE CLASS.
+        Get the feedback of a user given a batch of tracks.
+
+        Args:
+            user (User): The user for which to get the feedback.
+            batch (torch.Tensor): The batch of tracks for which to get the feedback.
+
+        Returns:
+            user_embedding, embeddings, temperature, music_score, feedback
+        """
+
+        user_embedding, embeddings, temperature, music_score = (
+            self._user_manager.user_step(user, batch)
+        )
+
+        feedback = self._score_to_feedback.get_feedback(music_score).to(self.device)
+
+        return user_embedding, embeddings, temperature, music_score, feedback
+
+    def get_reference_feedback(self, user: User, batch: torch.Tensor):
+        """
+        NOT USED AS INTERNAL API OF THE CLASS.
+        Get the feedback of a reference user given a batch of tracks.
+
+        Args:
+            user (User): The user for which to get the feedback.
+            batch (torch.Tensor): The batch of tracks for which to get the feedback.
+
+        Returns:
+            user_embedding, embeddings, temperature, music_score, feedback
+        """
+
+        user_embedding, embeddings, temperature, music_score = (
+            self._user_manager.feedback_step(user, batch)
+        )
+
+        feedback = self._score_to_feedback.get_feedback(music_score).to(self.device)
+
+        return user_embedding, embeddings, temperature, music_score, feedback
+
+    def clear_memory(self, user: User):
+        """
+        External API to clear the memory of a user.
+        """
+        self._user_manager.clear_memory(user)
 
     def save_weights():
         raise NotImplementedError("Not implemented yet.")

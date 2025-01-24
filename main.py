@@ -36,12 +36,13 @@ if __name__ == "__main__":
     manager = UsersTrainManager(
         users=users,
         users_config=user_config,
+        train_config=user_train_config,
         writer=writer,
         device=device,
     )
 
     user1 = manager.get_user(user)
 
-    manager.test_train(user1, user_train_config)
+    manager.test_train(user1)
 
     writer.close()
