@@ -80,7 +80,7 @@ class UsersTrainManager:
 
     counter = 0
 
-    def __train_one_step(self, tracks: torch.Tensor, user: User):
+    def train_one_step(self, tracks: torch.Tensor, user: User):
         _, _, temperature, music_score = self._user_manager.user_step(user, tracks)
 
         _, _, _, target_score = self._user_manager.feedback_step(user, tracks)
@@ -100,7 +100,7 @@ class UsersTrainManager:
 
 
 
-    def __eval(
+    def eval(
         self,
         val_loader: torch.utils.data.DataLoader | torch.Tensor,
         user: User,
@@ -217,11 +217,11 @@ class UsersTrainManager:
             range(self._train_config.epochs),
             desc=f"Finetuning user {user.uuid} | {user.user_id} | ref: {user.model_reference_id}",
         ):
-            loss = self.__train_one_step(batch, user)
+            loss = self.train_one_step(batch, user)
             losses.append(loss)
 
         if eval:
-            self.__eval(batch, user, epoch)
+            self.eval(batch, user, epoch)
 
         self.writer.add_scalar(
             "Loss/finetune_user", torch.tensor(losses).mean().item(), epoch

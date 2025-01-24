@@ -109,7 +109,7 @@ def train(
             tracks = user_train_manager._user_manager.get_memory(user)
             tracks = tracks.to(user_train_manager.device)
 
-            loss = user_train_manager.__train_one_step(tracks, user)
+            loss = user_train_manager.train_one_step(tracks, user)
             losses.append(loss)
 
         user_train_manager.writer.add_scalar(
@@ -132,7 +132,7 @@ def test_train(
         ):
             train(user_train_manager, train_dataloader, user, epoch)
 
-            user_train_manager.__eval(test_dataloader, user, epoch)
+            user_train_manager.eval(test_dataloader, user, epoch)
 
 if __name__ == "__main__":
     writer = SummaryWriter()

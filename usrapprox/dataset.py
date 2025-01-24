@@ -263,6 +263,7 @@ class UserDefinedContrastiveDataset(Dataset):
 
         with open(splits_path, "r") as f:
             splits = json.load(f)
+            
         self.splits = splits[partition]
         self.index_to_song_id = {
             idx: song_id for idx, song_id in enumerate(self.splits)

@@ -37,12 +37,12 @@ class TrainConfig:
     splits_path: str = "usrembeds/data/splits.json"
     embs_path: str = "usrembeds/data/embeddings/embeddings_full_split"
     stats_path: str = "usrembeds/data/clean_stats.csv"  # used only by ContrDatasetMERT
-    npos: int = 1
+    npos: int = 4
     nneg: int = 4
     batch_size: int = 128
-    num_workers: int = 10
+    num_workers: int = 1
     multiplier: int = 50  # used only by ContrDatasetMert
-    type: str = "ContrDatasetMERT"  # ContrDatasetMERT or anything
+    type: str = "asd"  # ContrDatasetMERT or anything
     epochs: int = 20
 
     # COMMON
