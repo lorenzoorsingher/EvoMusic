@@ -121,20 +121,33 @@ class UserDefinition:
         assert self.user_type in ["real", "synth"], "Invalid user type"
         if self.user_type == "synth":
             assert self.target_user_id != -1, "Synth user must have a target user id"
+            
+@dataclass
+class UserTrainer:
+    lr: float = 0.001
+    epochs: int = 2
+    
+    def __post_init__(self):
+        assert self.epochs > 0, "Number of epochs must be greater than 0"
+        assert self.lr > 0, "Learning rate must be greater than 0"
 
 @dataclass
 class UserApproximationConfig:
+    users: list[UserDefinition]
     aligner: AlignerV2Config = AlignerV2Config()
     user_conf: UserConfig = UserConfig()
-    users: list[UserDefinition] = field(default_factory=list)
+    train_conf: UserTrainer = UserTrainer()
+    
+    best_solutions: int = 10 # number of best solutions to keep
     
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
     def __post_init__(self):
         assert len(self.users) == self.user_conf.amount, "Number of user types must match the number of users"
+        assert self.best_solutions > 0, "Number of best solutions must be greater than 0"
         
         self.users = [UserDefinition(**user) for user in self.users]
-        
+
 
 # =================================================================================================
 # Music Evolution configuration

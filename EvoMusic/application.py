@@ -1,4 +1,6 @@
+import os
 from diffusers.utils.testing_utils import enable_full_determinism
+from tqdm import tqdm
 from EvoMusic.evolution.evolve import MusicEvolver
 from EvoMusic.configuration import load_yaml_config
 from EvoMusic.music_generation.generators import EasyRiffPipeline, MusicGenPipeline
@@ -6,9 +8,10 @@ from EvoMusic.usrapprox.utils.user_train_manager import UsersTrainManager
 from EvoMusic.usrapprox.utils.user import RealUser, SynthUser, User
 
 import torch
-from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 import random
+
+import gradio as gr
 
 class EvoMusic:
     def __init__(self, config_path: str):
@@ -41,13 +44,11 @@ class EvoMusic:
                 users.append(user)
             self.epoch = [0] * self.config.user_model.user_conf.amount
             
-            writer = SummaryWriter()
             self.user_manager = UsersTrainManager(
                 users = users,
                 users_config = self.config.user_model.user_conf,
                 aligner_config=self.config.user_model.aligner,
-                train_config = None,
-                writer=writer,
+                train_config = self.config.user_model.train_conf,
                 device = self.config.user_model.device,
             )
         elif self.config.evolution.fitness.mode == "music":
@@ -107,8 +108,16 @@ class EvoMusic:
         if duration is None:
             duration = self.config.evolution.best_duration
         
+        print(f"[APP] Generating music...")
         audio_paths = []
-        for i, solution in enumerate(results["last_generation"]["solutions"][:10]):
+        
+        solutions = results["last_generation"]["solutions"]
+        fitnesses = results["last_generation"]["fitnesses"]
+        # Sort solutions by fitness
+        solutions = [x for _, x in sorted(zip(fitnesses, solutions), key=lambda pair: pair[0])]
+        solutions = solutions[-self.config.user_model.best_solutions:]
+        
+        for i, solution in tqdm(enumerate(solutions), total=len(solutions)):
                
             if not self.evolver.problem.text_mode:
                 # copy the input to a new tensor as the values are read-only
@@ -125,6 +134,7 @@ class EvoMusic:
             
         return audio_paths
     
+
     def finetune_user(self, songs, user_idx):
         print(f"[APP] Finetuning user {user_idx}...")
         batch = self.evolver.problem.evaluator.embed_audios(songs).unsqueeze(0)
@@ -133,17 +143,59 @@ class EvoMusic:
             batch, self.epoch[user_idx])
         self.epoch[user_idx] += 1
 
-    def generation_loop(self, user_idx: int):
+
+    def generation_loop(self, user_idx: int, n_generations: int = None):
         """
         Evolve prompts or embeddings then finetune the user, rinse and repeat.
         
         Args:
             user_idx (int): Index of the user to evolve.
+            n_generations (int, optional): Number of generations to evolve. Defaults to None (uses config
         """
         while True:
-            results = self.evolve(user_idx)
+            results = self.evolve(user_idx, n_generations)
+            if not os.path.exists(self.music_generator.config.output_dir+"/music_"+str(user_idx)):
+                os.makedirs(self.music_generator.config.output_dir+"/music_"+str(user_idx))
             music = self.generate_music(results, f"music_{user_idx}/{self.epoch[user_idx]}")
             self.finetune_user(music, user_idx)
+
+    def single_step(self, user_idx: int, n_generations: int = None):
+        """
+        Perform a single step of evolution and finetuning.
+        
+        Args:
+            user_idx (int): Index of the user to evolve.
+            n_generations (int, optional): Number of generations to evolve. Defaults to None (uses config
+        """
+        results = self.evolve(user_idx, n_generations)
+        if not os.path.exists(self.music_generator.config.output_dir+"/music_"+str(user_idx)):
+            os.makedirs(self.music_generator.config.output_dir+"/music_"+str(user_idx))
+        music = self.generate_music(results, f"music_{user_idx}/{self.epoch[user_idx]}")
+        self.finetune_user(music, user_idx)
+        
+        return music
+        
+    def start(self):
+        """
+        Start the evolution process with an UI.
+        """
+        def run_evolution(user_index, n_generations):
+            music = self.single_step(int(user_index), int(n_generations))
+            return "Evolution completed", music
+
+        gr.Interface(
+            fn=run_evolution,
+            inputs=[
+                gr.Number(label="User Index", value=0),
+                gr.Number(label="Number of Generations", value=1)
+            ],
+            outputs=[
+                gr.Text(label="Status"),
+                gr.File(label="Generated Songs", file_count="multiple")
+            ],
+            title="Evolution UI"
+        ).launch()
+        
 
 if __name__ == "__main__":
     enable_full_determinism()

@@ -12,6 +12,24 @@ riffusion_pipeline:
 
 music_model: "musicgen"
 
+user_model:
+  aligner:
+    abs_file_path: "usrembeds/checkpoints/AlignerV2_best_model.pt"
+  user_conf:
+    memory_length: 50
+    amount: 1
+    init: "rmean" # mean rand rmean
+  train_conf:
+    lr: 0.001
+    epochs: 5
+  
+  best_solutions: 10
+
+  users:
+    - user_type: "synth"
+      target_user_id: 0
+
+
 evolution:
   exp_name: "GPT-evolve-riff"
 
@@ -25,7 +43,6 @@ evolution:
 
   fitness:
     mode: "user" # can either be user, music or dynamic
-    target_user: 125 # static target user for mode user
     # target_music: "generated_audio/breaking_me_down.wav" # path to the target music for mode music
     target_music: "generated_audio/04. For Leah.flac"
     # target_music: "generated_audio/duckstep.mp3"
