@@ -2,6 +2,7 @@ import math
 import os
 import scipy
 import torch
+import copy
 from typing import Union
 from diffusers import DiffusionPipeline
 from transformers import AutoProcessor, MusicgenForConditionalGeneration, set_seed
@@ -11,6 +12,7 @@ from diffusers.utils.testing_utils import enable_full_determinism
 import EvoMusic.configuration as c
 from riffusion.spectrogram_image_converter import SpectrogramImageConverter
 from riffusion.spectrogram_params import SpectrogramParams
+
 
 def dummy_safety_checker(images, **kwargs):
     return images, [False] * len(images)
@@ -34,7 +36,7 @@ class MusicGenerator:
                 str: text representation of the token embeddings
         """
         return "Embeddings to text not implemented"
-        
+
     def text_to_embed(self, text: str, max_length: int = None):
         """
         Takes text and returns the embeddings for the model
@@ -124,10 +126,13 @@ class MusicGenerator:
         if self.config.input_type == "text":
             return text
         elif self.config.input_type == "token_embeddings":
-            return [self.text_to_embeddings_before_encoder(t, max_length).squeeze(0) for t in text]
+            return [
+                self.text_to_embeddings_before_encoder(t, max_length).squeeze(0)
+                for t in text
+            ]
         elif self.config.input_type == "embeddings":
             return [self.text_to_embed(t, max_length).squeeze(0) for t in text]
-        
+
     def generate_path(self, name=None):
         """
         Generates the path for the output audio, if name is None, it will use jut the default experiment name
@@ -140,7 +145,7 @@ class MusicGenerator:
         # check if the output directory exists
         if not os.path.exists(self.config.output_dir):
             os.makedirs(self.config.output_dir)
-        
+
         base_name = self.config.name if name is None else name + "_" + self.config.name
         return os.path.join(
             self.config.output_dir,
@@ -260,12 +265,29 @@ class MusicGenPipeline(MusicGenerator):
 
     def text_to_embed(self, text, max_length=None):
         inputs = self.prepare_inputs(text, max_length)
+        generation_config = self.model.generation_config
+        generation_config = copy.deepcopy(generation_config)
+        model_kwargs = generation_config.update(max_length=max_length)
+        generation_config.validate()
+        self.model._validate_model_kwargs(model_kwargs.copy())
+
+        inputs_tensor, model_input_name, model_kwargs = (
+            self.model._prepare_model_inputs(
+                inputs, generation_config.bos_token_id, model_kwargs
+            )
+        )
+
+        model_kwargs["use_cache"] = generation_config.use_cache
+        model_kwargs["guidance_scale"] = generation_config.guidance_scale
+        model_kwargs["attention_mask"] = inputs_tensor["attention_mask"]
 
         with torch.no_grad():
-            # TODO: Not Working right now, need to fix
             return self.model._prepare_text_encoder_kwargs_for_generation(
-                inputs["input_ids"]
-            )
+                inputs_tensor["input_ids"],
+                model_kwargs,
+                model_input_name,
+                generation_config,
+            )["encoder_outputs"]
 
     def text_to_embeddings_before_encoder(self, text, max_length=None):
         inputs = self.prepare_inputs(text, max_length)
@@ -305,10 +327,6 @@ class MusicGenPipeline(MusicGenerator):
         elif self.config.input_type == "token_embeddings":
             return {"inputs_embeds": i}
         elif self.config.input_type == "embeddings":
-            i.last_hidden_state = torch.concatenate(
-                [i.last_hidden_state, torch.zeros_like(i.last_hidden_state)],
-                dim=0,
-            )
             return {"encoder_outputs": i}
 
     def generate_music(self, input, duration=5, name=None, **kwargs):
@@ -378,11 +396,11 @@ if __name__ == "__main__":
         path = musicgen_pipe.generate_music(inputs_gen, max_new_tokens=256)
 
         # ---------------- Test with embeds ----------------
-        # cfg.exp_name = "musicgen_embeds"
-        # cfg.input_type = "embeddings"
-        # musicgen_pipe = MusicGenPipeline(cfg)
-        # inputs_gen = musicgen_pipe.text_to_embed(txt, max_length=256)
-        # path = musicgen_pipe.generate_music(inputs_gen, max_new_tokens=256)
+        cfg.exp_name = "musicgen_embeds"
+        cfg.input_type = "embeddings"
+        musicgen_pipe = MusicGenPipeline(cfg)
+        inputs_gen = musicgen_pipe.text_to_embed(txt, max_length=256)
+        path = musicgen_pipe.generate_music(inputs_gen, max_new_tokens=256)
 
     else:
         raise ValueError("TEST must be either 'riffusion' or 'musicgen'")
