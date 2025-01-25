@@ -136,6 +136,9 @@ class EvoMusic:
     
 
     def finetune_user(self, songs, user_idx):
+        if self.config.evolution.fitness.mode == "music":
+            return
+        
         print(f"[APP] Finetuning user {user_idx}...")
         batch = self.evolver.problem.evaluator.embed_audios(songs).unsqueeze(0)
         self.user_manager.finetune(

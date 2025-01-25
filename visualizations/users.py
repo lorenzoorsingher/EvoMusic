@@ -296,7 +296,7 @@ def parse_arguments():
         type=str,
         choices=["tsne", "umap", "pca"],
         default="tsne",
-        help="Dimensionality reduction method to use: 'tsne' or 'umap'.",
+        help="Dimensionality reduction method to use: 'tsne' or 'umap' or 'pca'.",
     )
     parser.add_argument(
         "--device",
