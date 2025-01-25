@@ -115,8 +115,8 @@ class EvoMusic:
         fitnesses = results["last_generation"]["fitness_values"]
         # Sort solutions by fitness (higher is better)
         solutions, fitnesses = zip(*sorted(zip(solutions, fitnesses), key=lambda x: x[1], reverse=True))
-        solutions = solutions[:self.config.evolution.best_solutions]
-        fitnesses = fitnesses[:self.config.evolution.best_solutions]
+        solutions = solutions[:self.config.user_model.best_solutions]
+        fitnesses = fitnesses[:self.config.user_model.best_solutions]
         
         for i, fit, sol in zip(range(len(solutions)), fitnesses, solutions):
             if not self.evolver.problem.text_mode:
