@@ -118,19 +118,22 @@ class EvoMusic:
         solutions = solutions[-self.config.user_model.best_solutions:]
         fitnesses = sorted(fitnesses)[-self.config.user_model.best_solutions:]
         
-        for i, solution in tqdm(enumerate(solutions), total=len(solutions)):
-               
+        for i, fit, sol in zip(range(len(solutions)), fitnesses, solutions):
             if not self.evolver.problem.text_mode:
                 # copy the input to a new tensor as the values are read-only
-                generator_input = solution.clone().detach()
+                sol = sol.clone().detach()
                 if self.music_generator.config.input_type == "token_embeddings":
-                    print(f"\t1. {self.music_generator.token_to_text(generator_input)} - {fitnesses[i]}")
+                    print(f"\t{i+1}. {self.music_generator.token_to_text(sol)} - {fit}")
                 else:
-                    print(f"\t1. embedding with fitness score {fitnesses[i]}")
+                    print(f"\t{i+1}. embedding with fitness score {fit}")
+            else:
+                print(f"\t{i+1}. {sol} - {fit}")
+        
+        for i, solution in tqdm(enumerate(solutions), total=len(solutions)):
+            if not self.evolver.problem.text_mode:
+                generator_input = solution.clone().detach()
             else:
                 generator_input = solution
-                print(f"\t1. {generator_input} - {fitnesses[i]}")
-                
             audio_path = self.music_generator.generate_music(
                 input=generator_input, 
                 name=f"{base_name}_{i}", 

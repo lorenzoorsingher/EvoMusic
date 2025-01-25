@@ -5,7 +5,10 @@ import torch
 import numpy as np
 import random
 
+import warnings
+
 if __name__ == "__main__":
+    warnings.filterwarnings("ignore")
     enable_full_determinism()
 
     # Set random seed for reproducibility
