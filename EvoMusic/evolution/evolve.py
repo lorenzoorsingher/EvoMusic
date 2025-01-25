@@ -146,7 +146,7 @@ class MusicEvolver:
         # Get the best solution
         best_fitness = self.optimizer.status["pop_best_eval"]
         best_sol = self.optimizer.status["pop_best"].values
-        print("\n--- Evolution Complete ---")
+        print("--- Evolution Complete ---")
         
         last_gen = self.optimizer.population.values
         last_gen = [last_gen[i] for i in range(len(last_gen))]

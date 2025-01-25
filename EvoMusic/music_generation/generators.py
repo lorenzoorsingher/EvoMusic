@@ -25,6 +25,16 @@ class MusicGenerator:
         super().__init__()
         self.config = music_generator
 
+    def token_to_text(self, token_embs: torch.Tensor):
+        """
+        Converts a tensor of token embeddings to text using the closest token in the tokenizer's vocabulary to each embedding.
+            Args:
+                token_embs (torch.Tensor): tensor of token embeddings
+            Returns:
+                str: text representation of the token embeddings
+        """
+        return "Embeddings to text not implemented"
+        
     def text_to_embed(self, text: str, max_length: int = None):
         """
         Takes text and returns the embeddings for the model
@@ -236,6 +246,17 @@ class MusicGenPipeline(MusicGenerator):
             self.config.model
         ).to(self.config.device)
         self.model.eval()
+
+    def token_to_text(self, token_embs):
+        embedding_mat = self.model.get_input_embeddings().weight
+        # Compute the dot product between the embeddings and the embedding matrix
+        token_embs = token_embs.view(-1, embedding_mat.size(-1)).to(self.model.device)
+
+        dot_prod = torch.matmul(token_embs, embedding_mat.T)
+        # Find the index of the closest token for each embedding
+        closest_tokens = torch.argmax(dot_prod, dim=-1)
+        # Convert the tokens to text
+        return self.processor.decode(closest_tokens)
 
     def text_to_embed(self, text, max_length=None):
         inputs = self.prepare_inputs(text, max_length)

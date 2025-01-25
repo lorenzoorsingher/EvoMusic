@@ -116,14 +116,20 @@ class EvoMusic:
         # Sort solutions by fitness
         solutions = [x for _, x in sorted(zip(fitnesses, solutions), key=lambda pair: pair[0])]
         solutions = solutions[-self.config.user_model.best_solutions:]
+        fitnesses = sorted(fitnesses)[-self.config.user_model.best_solutions:]
         
         for i, solution in tqdm(enumerate(solutions), total=len(solutions)):
                
             if not self.evolver.problem.text_mode:
                 # copy the input to a new tensor as the values are read-only
                 generator_input = solution.clone().detach()
+                if self.music_generator.config.input_type == "token_embeddings":
+                    print(f"\t1. {self.music_generator.token_to_text(generator_input)} - {fitnesses[i]}")
+                else:
+                    print(f"\t1. embedding with fitness score {fitnesses[i]}")
             else:
                 generator_input = solution
+                print(f"\t1. {generator_input} - {fitnesses[i]}")
                 
             audio_path = self.music_generator.generate_music(
                 input=generator_input, 
@@ -156,11 +162,7 @@ class EvoMusic:
             n_generations (int, optional): Number of generations to evolve. Defaults to None (uses config
         """
         while True:
-            results = self.evolve(user_idx, n_generations)
-            if not os.path.exists(self.music_generator.config.output_dir+"/music_"+str(user_idx)):
-                os.makedirs(self.music_generator.config.output_dir+"/music_"+str(user_idx))
-            music = self.generate_music(results, f"music_{user_idx}/{self.epoch[user_idx]}")
-            self.finetune_user(music, user_idx)
+            self.single_step(user_idx, n_generations)
 
     def single_step(self, user_idx: int, n_generations: int = None):
         """
@@ -170,11 +172,19 @@ class EvoMusic:
             user_idx (int): Index of the user to evolve.
             n_generations (int, optional): Number of generations to evolve. Defaults to None (uses config
         """
+        print ("\n\n===========================================================================")
+        print (f"Performing a single step of evolution and finetuning for user {user_idx}")
+        print ("===========================================================================")
+        
         results = self.evolve(user_idx, n_generations)
         if not os.path.exists(self.music_generator.config.output_dir+"/music_"+str(user_idx)):
             os.makedirs(self.music_generator.config.output_dir+"/music_"+str(user_idx))
         music = self.generate_music(results, f"music_{user_idx}/{self.epoch[user_idx]}")
         self.finetune_user(music, user_idx)
+        
+        print ("===============================================================")
+        print (f"Evolution and finetuning for user {user_idx} completed")
+        print ("===============================================================")
         
         return music
         

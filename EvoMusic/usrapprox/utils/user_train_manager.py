@@ -188,13 +188,13 @@ class UsersTrainManager:
         ).mean()
 
         # Log
-        wandb.log({f"user: {user.uuid} Validation/Abs Embedding": abs_diff}, step=epoch)
-        wandb.log({f"user: {user.uuid} Validation/MSE Embedding": mse_diff}, step=epoch)
-        wandb.log({f"user: {user.uuid} Validation/Loss": losses}, step=epoch)
+        wandb.log({f"user: {user.uuid} Validation/Abs Embedding": abs_diff})
+        wandb.log({f"user: {user.uuid} Validation/MSE Embedding": mse_diff})
+        wandb.log({f"user: {user.uuid} Validation/Loss": losses})
         wandb.log({
-            f"user: {user.uuid} Validation/Cosine Model": average_cosine_similarity_on_model}, step=epoch
+            f"user: {user.uuid} Validation/Cosine Model": average_cosine_similarity_on_model}
         )
-        wandb.log({f"user: {user.uuid} Validation/Cosine Scores": cosine_scores}, step=epoch)
+        wandb.log({f"user: {user.uuid} Validation/Cosine Scores": cosine_scores})
 
     def set_optimizer(self):
         if self._optimizer is None:
@@ -217,6 +217,7 @@ class UsersTrainManager:
         - fare il train coi dati che hai, si itera per un numero di epoche n
         """
         self.set_optimizer()
+        wandb.log({"Epoch": epoch})
 
         losses = []
         for _ in tqdm(
@@ -230,7 +231,7 @@ class UsersTrainManager:
             self.eval(batch, user, epoch)
 
         wandb.log({
-            "Loss/finetune_user": torch.tensor(losses).mean().item()}, step=epoch
+            "Loss/finetune_user": torch.tensor(losses).mean().item()}
         )
 
     def get_user_score(self, user: User, batch: torch.Tensor):
