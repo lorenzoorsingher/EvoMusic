@@ -8,6 +8,8 @@ from EvoMusic.usrapprox.utils.user_train_manager import UsersTrainManager
 import torch
 from torch.utils.data import DataLoader
 
+import wandb
+
 # seed and deterministic
 torch.manual_seed(0)
 # torch.backends.cudnn.deterministic = True
@@ -112,8 +114,8 @@ def train(
             loss = user_train_manager.train_one_step(tracks, user)
             losses.append(loss)
 
-        user_train_manager.writer.add_scalar(
-            "Loss/Training", torch.tensor(losses).mean().item(), epoch
+        wandb.log(
+            {"Loss/Training": torch.tensor(losses).mean().item()}, step=epoch
         )
 
 def test_train(
@@ -135,7 +137,10 @@ def test_train(
             user_train_manager.eval(test_dataloader, user, epoch)
 
 if __name__ == "__main__":
-    writer = SummaryWriter()
+    wandb.init(
+                project="test", 
+                name="ea main test", 
+    )
 
     user = 0
 
@@ -160,13 +165,9 @@ if __name__ == "__main__":
         users=users,
         users_config=user_config,
         train_config=user_train_config,
-        writer=writer,
         device=device,
     )
 
     user1 = manager.get_user(user)
 
     test_train(manager, user1)
-    
-
-    writer.close()

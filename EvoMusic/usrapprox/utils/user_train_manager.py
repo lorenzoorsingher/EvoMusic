@@ -1,5 +1,6 @@
 import torch
-from torch.utils.tensorboard import SummaryWriter
+
+import wandb
 from tqdm import tqdm
 
 from EvoMusic.configuration import AlignerV2Config, TrainConfig, UserConfig
@@ -14,11 +15,9 @@ class UsersTrainManager:
         users: list[RealUser, SynthUser],
         users_config: UserConfig,
         train_config: TrainConfig,
-        writer: SummaryWriter,
         aligner_config: AlignerV2Config = AlignerV2Config(),
         device: str = "cuda",
     ):
-        self.writer = writer
         self.device = device
 
         self._score_to_feedback = ScoreToFeedback(self.device)
@@ -78,8 +77,6 @@ class UsersTrainManager:
 
         return info_nce_loss
 
-    counter = 0
-
     def train_one_step(self, tracks: torch.Tensor, user: User):
         _, _, temperature, music_score = self._user_manager.user_step(user, tracks)
 
@@ -97,8 +94,6 @@ class UsersTrainManager:
         self._optimizer.step()
 
         return loss.item()
-
-
 
     def eval(
         self,
@@ -182,13 +177,13 @@ class UsersTrainManager:
         ).mean()
 
         # Log
-        self.writer.add_scalar("Validation/Abs Embedding", abs_diff, epoch)
-        self.writer.add_scalar("Validation/MSE Embedding", mse_diff, epoch)
-        self.writer.add_scalar("Loss/Validation", losses, epoch)
-        self.writer.add_scalar(
-            "Validation/Cosine Model", average_cosine_similarity_on_model, epoch
+        wandb.log({f"user: {user.uuid} Validation/Abs Embedding": abs_diff}, step=epoch)
+        wandb.log({f"user: {user.uuid} Validation/MSE Embedding": mse_diff}, step=epoch)
+        wandb.log({f"user: {user.uuid} Validation/Loss": losses}, step=epoch)
+        wandb.log({
+            f"user: {user.uuid} Validation/Cosine Model": average_cosine_similarity_on_model}, step=epoch
         )
-        self.writer.add_scalar("Validation/Cosine Scores", cosine_scores, epoch)
+        wandb.log({f"user: {user.uuid} Validation/Cosine Scores": cosine_scores}, step=epoch)
 
     def set_optimizer(self):
         if self._optimizer is None:
@@ -223,8 +218,8 @@ class UsersTrainManager:
         if eval:
             self.eval(batch, user, epoch)
 
-        self.writer.add_scalar(
-            "Loss/finetune_user", torch.tensor(losses).mean().item(), epoch
+        wandb.log({
+            "Loss/finetune_user": torch.tensor(losses).mean().item()}, step=epoch
         )
 
     def get_user_score(self, user: User, batch: torch.Tensor):
