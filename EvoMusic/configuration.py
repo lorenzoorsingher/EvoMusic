@@ -377,6 +377,8 @@ class ProjectConfig:
                 
             if self.evolution.fitness.mode in ["user", "dynamic"]:
                 assert self.user_model is not None, "user_model must be defined when using user or dynamic fitness mode"
+                
+            assert self.evolution.search.population_size >= self.user_model.best_solutions, "Population size must be greater than the number of best solutions to generate for finetuning"
 
 def load_yaml_config(path) -> ProjectConfig:
     with open(path) as file:
