@@ -71,7 +71,7 @@ class UsrEmb(AlignerV2):
         """
         # users_embedding : [967, 256]
         if init == "random":
-            user_embedding = torch.randn(users_embedding.shape[1])
+            user_embedding = torch.randn(users_embedding.shape[1]).to(users_embedding.device)
         elif init == "mean":
             user_embedding = users_embedding.mean(dim=0)  # [256]
             # user_embedding = users_embedding[0]
@@ -79,7 +79,7 @@ class UsrEmb(AlignerV2):
             # is mean + random noise
             user_embedding = (
                 users_embedding.mean(dim=0)
-                + torch.randn(users_embedding.shape[1]) * rmean
+                + torch.randn(users_embedding.shape[1]).to(users_embedding.device) * rmean
             )
 
         # attach on dimension 0 `n` times average_suer_embedding to the user embedding

@@ -282,19 +282,13 @@ class AlignerV2(nn.Module):
         """
 
         out = user_embedding.unsqueeze(1)
-        posemb_out = music_embedding[:, 0, :].unsqueeze(dim=1)
-        negemb_out = music_embedding[:, 1:, :]
+        out = out.repeat(1, music_embedding.shape[1], 1)
+        
+        sim = self.cosine_similarity(out, music_embedding)
 
-        possim = self.cosine_similarity(out, posemb_out)
+        sim = sim.view(-1, music_embedding.shape[1])
 
-        out = out.repeat(1, negemb_out.shape[1], 1)
-        negsim = self.cosine_similarity(out, negemb_out)
-
-        negsim = negsim.view(-1, negemb_out.shape[1])
-
-        music_score = torch.cat((possim, negsim), dim=1)
-
-        return music_score
+        return sim
 
 
 class Aligner(nn.Module):

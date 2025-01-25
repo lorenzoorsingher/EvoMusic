@@ -3,7 +3,8 @@ from evotorch.algorithms.ga import Cosyne, GeneticAlgorithm, SteadyStateGA
 from evotorch.operators import OnePointCrossOver, GaussianMutation
 
 from EvoMusic.music_generation.generators import MusicGenerator
-from EvoMusic.evolution.searchers import PromptSearcher, MusicOptimizationProblem
+from EvoMusic.evolution.searchers import PromptSearcher
+from EvoMusic.evolution.problem import MusicOptimizationProblem
 from EvoMusic.evolution.logger import LivePlotter
 from EvoMusic.configuration import evoConf
 
@@ -120,13 +121,15 @@ class MusicEvolver:
             config.logger,
         )
         
-    def evolve(self, n_generations: int=None):
+    def evolve(self, n_generations: int=None, user_fitness=None):
         """
         Run the evolution strategy for a specified number of generations
         
         Args:
             n_generations (int): The number of generations to run the evolution for.
                 If None, the number of generations specified in the configuration is used.
+            user_fitness (function): A custom fitness function to use for evaluation. 
+                Can be left as None for music mode
                 
         Returns:
             dict: A dictionary containing the best solution and the last generation
@@ -134,6 +137,10 @@ class MusicEvolver:
         """
         if not n_generations:
             n_generations = self.config.generations
+        
+        if user_fitness:
+            self.problem.evaluator.set_user_fitness(user_fitness)
+            
         self.optimizer.run(num_generations=n_generations)
         
         # Get the best solution
@@ -160,7 +167,7 @@ class MusicEvolver:
 if __name__ == "__main__":
     from diffusers.utils.testing_utils import enable_full_determinism
     from EvoMusic.configuration import load_yaml_config
-    from music_generation.generators import EasyRiffPipeline, MusicGenPipeline
+    from EvoMusic.music_generation.generators import EasyRiffPipeline, MusicGenPipeline
 
     enable_full_determinism()
     

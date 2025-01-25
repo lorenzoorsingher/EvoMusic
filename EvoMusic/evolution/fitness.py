@@ -5,6 +5,8 @@ import torchaudio
 from transformers import AutoModel, Wav2Vec2FeatureExtractor
 
 from EvoMusic.configuration import ProjectConfig, FitnessConfig
+from EvoMusic.usrapprox.utils.user_train_manager import UsersTrainManager
+from EvoMusic.usrapprox.utils.user import RealUser, SynthUser, User
 
 from EvoMusic.user_embs.model import AlignerV2
 
@@ -34,21 +36,6 @@ class MusicScorer:
         )
         self.resample_rate = self.processor.sampling_rate
 
-        state_dict, conf, _ = AlignerV2.load_model(
-            "usrembeds/checkpoints/AlignerV2_best_model.pt", self.config.device
-        )
-        model_conf = {
-            "emb_size": conf["emb_size"],
-            "prj_size": conf["prj_size"],
-            "prj_type": conf["prj"],
-            "aggragation": conf["aggr"],
-            "n_users": conf["nusers"],
-            "lt": conf["learnable_temp"],
-        }
-        self.model = AlignerV2(**model_conf).to(self.config.device)
-        self.model.load_state_dict(state_dict)
-        self.model.eval()
-
         if self.config.mode == "music":
             # check if the target music exists
             assert os.path.exists(
@@ -57,6 +44,12 @@ class MusicScorer:
             self.target_music_emb = self.embed_audios([self.config.target_music]).view(
                 1, -1
             )
+            
+        self.user_fitness = None
+            
+    # setter for the fitness function
+    def set_user_fitness(self, user_fitness):
+        self.user_fitness = user_fitness
 
     def embed_audios(self, audio_paths: list[str]) -> torch.Tensor:
         """
@@ -226,28 +219,25 @@ class MusicScorer:
 
         return torch.tensor(penalties, dtype=torch.float32)
 
-    def get_user_likeness(self, audio_paths: list[str], user_idx: int = 0):
+    def get_user_likeness(self, audio_paths: list[str]):
         """
         Compute the likeness of a user to an audio file
 
         Args:
             audio_paths (list[str]): The paths to the audio files to compare
-            user_idx (int): The index of the user to compare to
 
         Returns:
             torch.Tensor: The likeness of the user to each audio files
         """
         music_embs = self.embed_audios(audio_paths)
-        music_embs = music_embs.unsqueeze(0)  # shape (1, n, emb_size)
+        music_embs = music_embs.unsqueeze(0)  # shape (1, 1, n, emb_size)
 
-        # if user_idx is not a tensor, convert it to a tensor
-        if not torch.is_tensor(user_idx):
-            user_idx = torch.tensor(user_idx).to(self.config.device).unsqueeze(0)
-
-        with torch.no_grad():
-            usr, embs, temp = self.model(user_idx, music_embs)
-            embs = embs.squeeze(0)  # shape (n, prj_size)
-            return torch.cosine_similarity(usr, embs, dim=1)
+        assert self.user_fitness is not None, "User fitness function not set"
+        
+        # Compute the fitness of the audio files
+        fitness = self.user_fitness(music_embs)
+        
+        return fitness
 
     def compute_fitness(self, audio_paths: list[str]):
         """
@@ -260,15 +250,12 @@ class MusicScorer:
             torch.Tensor: The fitness of the audio files
         """
         # 1) Compute base fitness (likeness to user, music, etc.).
-        if self.config.mode == "user":
-            base = self.get_user_likeness(audio_paths, self.config.target_user)
+        if self.config.mode == "user" or self.config.mode == "dynamic":
+            base = self.get_user_likeness(audio_paths)
 
         elif self.config.mode == "music":
             music_embs = self.embed_audios(audio_paths).view(len(audio_paths), -1)
             base = torch.cosine_similarity(music_embs, self.target_music_emb, dim=1)
-
-        elif self.config.mode == "dynamic":
-            raise NotImplementedError("Dynamic mode is not yet implemented")
         
         # 2) Compute artifact penalties (graininess, clipping, etc.).
         penalties = self.measure_audio_artifacts(audio_paths).to(base.device)

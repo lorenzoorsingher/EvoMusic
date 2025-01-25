@@ -6,6 +6,18 @@ music_generator:
 
 music_model: "musicgen"
 
+user_model:
+  aligner:
+    abs_file_path: "usrembeds/checkpoints/run_20241227_151619_best.pt"
+  user_conf:
+    memory_lenthg: 50
+    amount: 1
+    init: "rmean"
+
+  users:
+    - user_type: "synth"
+    - target_user_id: 0
+
 evolution:
   exp_name: "default"
 

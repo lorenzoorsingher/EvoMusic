@@ -16,7 +16,7 @@ import wandb
 
 from EvoMusic.configuration import evolutionLogger
 from EvoMusic.music_generation.generators import MusicGenerator
-from EvoMusic.evolution.searchers import MusicOptimizationProblem
+from EvoMusic.evolution.problem import MusicOptimizationProblem
 
 class LivePlotter(Logger):
     def __init__(

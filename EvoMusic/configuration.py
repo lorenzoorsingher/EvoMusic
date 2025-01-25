@@ -43,7 +43,7 @@ class MusicGeneratorConfig:
     output_dir: str = "output"
     name: str = "default"
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
-
+    
     def __post_init__(self):
         assert self.input_type in [
             "text",
@@ -87,9 +87,12 @@ class AlignerV2Config:
 @dataclass
 class UserConfig:
     memory_length: int = 0  # number of tracks to remember
-    amount: int = 0 # number of users
+    amount: int = 1 # number of users
     init: str = "mean"  # "random" or "mean" or "rmean"
     rmean: float = 0.1  # used only if init is "rmean" - weight of the random noise
+    
+    def __post_init__(self):
+        assert self.init in ["random", "mean", "rmean"], "Invalid init mode"
 
 
 @dataclass
@@ -110,21 +113,32 @@ class TrainConfig:
     lr: float = 0.001
 
 @dataclass
-class UserApproximationConfig:
-    aligner: AlignerV2Config = None
-    user: UserConfig = None
+class UserDefinition:
+    user_type: str
+    target_user_id: int = -1
 
     def __post_init__(self):
-        assert self.user.init in ["random", "mean", "rmean"], "Invalid init mode"
+        assert self.user_type in ["real", "synth"], "Invalid user type"
+        if self.user_type == "synth":
+            assert self.target_user_id != -1, "Synth user must have a target user id"
 
+@dataclass
+class UserApproximationConfig:
+    aligner: AlignerV2Config = AlignerV2Config()
+    user_conf: UserConfig = UserConfig()
+    users: list[UserDefinition] = field(default_factory=list)
+    
+    device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
-
-
+    def __post_init__(self):
+        assert len(self.users) == self.user_conf.amount, "Number of user types must match the number of users"
+        
+        self.users = [UserDefinition(**user) for user in self.users]
+        
 
 # =================================================================================================
 # Music Evolution configuration
 # =================================================================================================
-
 
 @dataclass
 class evolutionLogger:
@@ -153,12 +167,9 @@ class LLMConfig:
 @dataclass
 class FitnessConfig:
     mode: str = "user"  # can either be user, music or dynamic
-    target_user: int = 0  # static target user for mode user
     target_music: str = ""  # path to the target song
-    noise_weight: float = 0.1  # weight of the noise in the fitness
+    noise_weight: float = 0.25  # weight of the noise in the fitness
     
-    user_model: UserApproximationConfig = None  # user model configuration
-
     device: str = (
         "cuda" if torch.cuda.is_available() else "cpu"
     )  # device to use for the fitness evaluation
@@ -167,10 +178,9 @@ class FitnessConfig:
         assert self.mode in ["user", "music", "dynamic"], "Invalid fitness mode"
         if self.target_music != "":
             self.target_music = os.path.expanduser(self.target_music)
-            
-        if self.mode == "user":
-            assert self.user_model.aligner is not None, "User model must be defined when using user mode"
-
+        
+        if self.mode == "music":
+            assert os.path.exists(self.target_music), "Target music file does not exist"
 
 @dataclass
 class LLMPromptOperator:
@@ -318,6 +328,8 @@ class ProjectConfig:
     riffusion_pipeline: EasyRiffusionConfig = (
         None  # define this when using riffusion model
     )
+    
+    user_model: UserApproximationConfig = None  # user model configuration
 
     def __post_init__(self):
         assert self.music_model in [
@@ -349,7 +361,9 @@ class ProjectConfig:
                     "full LLM",
                     "LLM evolve",
                 ], "search mode cannot be Full LLM or LLM evolve when using embeddings or token embeddings input"
-
+                
+            if self.evolution.fitness.mode in ["user", "dynamic"]:
+                assert self.user_model is not None, "user_model must be defined when using user or dynamic fitness mode"
 
 def load_yaml_config(path) -> ProjectConfig:
     with open(path) as file:
