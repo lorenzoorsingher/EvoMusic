@@ -112,7 +112,7 @@ class EvoMusic:
         audio_paths = []
         
         solutions = results["last_generation"]["solutions"]
-        fitnesses = results["last_generation"]["fitnesses"]
+        fitnesses = results["last_generation"]["fitness_values"]
         # Sort solutions by fitness
         solutions = [x for _, x in sorted(zip(fitnesses, solutions), key=lambda pair: pair[0])]
         solutions = solutions[-self.config.user_model.best_solutions:]

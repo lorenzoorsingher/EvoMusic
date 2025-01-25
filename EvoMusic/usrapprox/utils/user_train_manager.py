@@ -29,6 +29,17 @@ class UsersTrainManager:
             aligner_config=aligner_config,
             device=device,
         )
+        
+        wandb.init(
+            project="EvoUsers", 
+            name="UsersTrainManager",
+            config={
+                "users_config": users_config.__dict__,
+                "train_config": train_config.__dict__,
+                "aligner_config": aligner_config.__dict__,
+                "device": device,
+            }
+        )
 
         self._train_config = train_config
         self._optimizer = None
