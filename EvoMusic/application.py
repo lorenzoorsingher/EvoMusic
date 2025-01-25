@@ -113,17 +113,17 @@ class EvoMusic:
         
         solutions = results["last_generation"]["solutions"]
         fitnesses = results["last_generation"]["fitness_values"]
-        # Sort solutions by fitness
-        solutions = [x for _, x in sorted(zip(fitnesses, solutions), key=lambda pair: pair[0])]
-        solutions = solutions[-self.config.user_model.best_solutions:]
-        fitnesses = sorted(fitnesses)[-self.config.user_model.best_solutions:]
+        # Sort solutions by fitness (higher is better)
+        solutions, fitnesses = zip(*sorted(zip(solutions, fitnesses), key=lambda x: x[1], reverse=True))
+        solutions = solutions[:self.config.evolution.best_solutions]
+        fitnesses = fitnesses[:self.config.evolution.best_solutions]
         
         for i, fit, sol in zip(range(len(solutions)), fitnesses, solutions):
             if not self.evolver.problem.text_mode:
                 # copy the input to a new tensor as the values are read-only
                 sol = sol.clone().detach()
                 if self.music_generator.config.input_type == "token_embeddings":
-                    print(f"\t{i+1}. {self.music_generator.token_to_text(sol)} - {fit}")
+                    print(f"\t{i+1}. {self.music_generator.token_to_text(sol)} ~ {fit}")
                 else:
                     print(f"\t{i+1}. embedding with fitness score {fit}")
             else:
