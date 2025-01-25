@@ -136,7 +136,7 @@ class EvoMusic:
     
 
     def finetune_user(self, songs, user_idx):
-        if self.config.evolution.fitness.mode == "music":
+        if self.config.evolution.fitness.mode != "dynamic":
             return
         
         print(f"[APP] Finetuning user {user_idx}...")
