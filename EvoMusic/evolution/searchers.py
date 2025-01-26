@@ -1,94 +1,15 @@
-import gc
 import math
-import os
-import time
-import requests
-import json
 import numpy as np
-import random
 
-from evotorch import Problem, Solution
-from evotorch.neuroevolution import GymNE, VecGymNE
 from evotorch.algorithms import SearchAlgorithm
 from evotorch.algorithms.searchalgorithm import SinglePopulationAlgorithmMixin
 import torch
 from tqdm import tqdm
 
-from EvoMusic.evolution.fitness import MusicScorer
-from EvoMusic.music_generation.generators import MusicGenerator
-from EvoMusic.configuration import LLMConfig, LLMPromptOperator, searchConf, evoConf
+from EvoMusic.evolution.problem import MusicOptimizationProblem, LLMPromptGenerator
+from EvoMusic.configuration import LLMConfig, LLMPromptOperator, searchConf
 
 # ------------------------- Evolutionary Algorithm ------------------------
-class LLMPromptGenerator():
-    def __init__(self, config: LLMConfig):
-        self.config = config
-
-    def query_llm(self, prompt: str):
-        """
-        Query the LLM API with the given prompt.
-        """
-        # print(f"\t[LLM] sent request to LLM")
-        # print(f"Querying LLM with prompt: '{prompt}'")
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.config.api_key}",
-        }
-        data = {
-            "model": self.config.model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You produce prompts used to generate music following the requests of the user. You should always respond with the requested prompts by encasing each one in <prompt> and </prompt> tags. Examples of valid output prompts are:\n 1. <prompt> Text of prompt. </prompt>\n 2. <prompt> Another prompt. </prompt>",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": self.config.temperature,
-            "max_tokens": 5000,
-        }
-        try:
-            response = requests.post(
-                self.config.api_uri, headers=headers, data=json.dumps(data)
-            )
-            response.raise_for_status()
-            llm_response = response.json()["choices"][0]["message"]["content"].strip()
-            # print(f"LLM responded with: '{llm_response}'")
-            # print(f"\t[LLM] API request successful")
-            return llm_response
-        except Exception as e:
-            print(f"\t[LLM] API request failed: {e}")
-            return ""
-        
-    def parse_llm_response(self, response: str):
-        """
-        Parse the response from the LLM API and return the prompts.
-        """
-        prompts = []
-        if response.count("<prompt>") != response.count("</prompt>"):
-            return prompts
-
-        for answer in response.split("</prompt>"):
-            if "<prompt>" in answer:
-                prompts.append(answer[answer.index("<prompt>") + 8 :].strip())
-
-        return prompts
-
-    def generate_prompts(self, num_prompts: int):
-        prompts = []
-        while len(prompts) < num_prompts:
-            answers = self.query_llm(
-                f"Generate {num_prompts-len(prompts)} diverse prompts for generating music, they should span multiple generes, moods, ..."
-            )
-
-            if answers.count("<prompt>") != answers.count("</prompt>"):
-                continue
-
-            for answer in answers.split("</prompt>"):
-                if "<prompt>" in answer:
-                    prompts.append(answer[answer.index("<prompt>") + 8 :].strip())
-                if len(prompts) >= num_prompts:
-                    break
-
-        return prompts
 
 class LLMEvolutionOperator():
     def __init__(self, operator_config: LLMPromptOperator, LLM: LLMPromptGenerator):
@@ -142,7 +63,7 @@ class LLMEvolutionOperator():
 class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
     def __init__(
         self,
-        problem: Problem,
+        problem: MusicOptimizationProblem,
         search_config: searchConf,
         LLM_config: LLMConfig,
     ):
@@ -239,7 +160,13 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
             return []
 
         num_novel = int(self.config.population_size * self.config.novel_prompts)
-        novel_prompts = self.LLM_model.generate_prompts(num_novel)
+        
+        if self.problem.evo_config.initialization == "LLM":
+            novel_prompts = self.problem.fill_with_LLM(num_novel)
+        elif self.problem.evo_config.initialization == "file":
+            novel_prompts = self.problem.fill_with_file(num_novel)
+        else:
+            raise ValueError("Invalid initialization mode")
 
         return novel_prompts
 
@@ -315,7 +242,7 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         old_pop_evals = self.population.evals
         
         print("[LLM evolve] Applying genetic operators...")
-        for _ in tqdm(range(math.ceil(self.config.population_size / self.config.LLM_genetic_operators[-1].output))):
+        for _ in tqdm(range(math.ceil((self.config.population_size-len(new_population)) / self.config.LLM_genetic_operators[-1].output))):
             # select the individuals for the tournament
             selected_population = self.tournament_selection(old_population, old_pop_evals, self.config.LLM_genetic_operators[0].input)
             

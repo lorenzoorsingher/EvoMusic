@@ -230,7 +230,9 @@ class searchConf:
         False  # use multinomial sampling to select the individuals for all operations
     )
     temperature: float = 1  # temperature for the sampling
+    
     novel_prompts: float = 0  # fraction of poupulation to create ex-novo, range [0,1]
+    
     elites: float = 0  # fraction of population to keep from the previous, range [0,1]
 
     # full LLM parameters
@@ -308,7 +310,7 @@ class evoConf:
         - "LLM" : initialize the population using the LLM (need to specify the LLM)
         - "file" : initialize the population using a file containing the prompts separated by a new line (need to specify the init_file)
     """
-    init_file: str = ""  # path to the initialization file when using the "file" initialization
+    init_file: str = "EvoMusic/music_generation/init_prompts.txt"  # path to the initialization file when using the "file" initialization
     LLM: LLMConfig = None  # LLM configuration when using the LLM initialization
 
     device: str = (
