@@ -8,7 +8,6 @@ from tqdm import tqdm
 import pandas as pd
 import numpy as np
 from random import randint
-import concurrent.futures
 
 from EvoMusic.usrapprox.models.usr_emb import UsrEmb
 
@@ -25,16 +24,12 @@ class ContrDatasetMERT(Dataset):
         nneg=10,
         multiplier=10,
         transform=None,
-        preload=False,  # New parameter for preloading
-        max_workers=12,  # Number of threads for preloading
     ):
         self.embs_dir = embs_dir
         self.stats_path = stats_path
         self.nneg = nneg
         self.multiplier = multiplier
         self.transform = transform
-        self.preload = preload  # Store the preload flag
-        self.max_workers = max_workers  # Number of threads
 
         print("[DATASET] Creating dataset")
 
@@ -69,11 +64,6 @@ class ContrDatasetMERT(Dataset):
         # Number of users
         self.nusers = self.stats["userid"].nunique()
 
-        # Preload embeddings into memory if preload=True
-        if self.preload:
-            print("[DATASET] Preloading embeddings into RAM using multi-threading")
-            self._preload_embeddings()
-
     def _load_embedding(self, key):
         """
         Helper function to load a single embedding JSON file.
@@ -97,30 +87,6 @@ class ContrDatasetMERT(Dataset):
         else:
             print(f"[WARNING] Embedding file '{emb_file}' does not exist")
             return key, None
-
-    def _preload_embeddings(self):
-        """
-        Preloads all embeddings into the self.embeddings dictionary using multi-threading.
-        """
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=self.max_workers
-        ) as executor:
-            # Use list to eagerly evaluate and use tqdm for progress bar
-            results = list(
-                tqdm(
-                    executor.map(self._load_embedding, self.emb_keys),
-                    total=len(self.emb_keys),
-                    desc="Preloading embeddings",
-                )
-            )
-
-        # Populate the embeddings dictionary
-        for key, emb in results:
-            if emb is not None:
-                ContrDatasetMERT.embeddings[key] = emb
-        print(
-            f"[DATASET] Preloaded {len(ContrDatasetMERT.embeddings)} embeddings out of {len(self.emb_keys)}"
-        )
 
     def __len__(self):
         return self.nusers * self.multiplier
@@ -149,51 +115,43 @@ class ContrDatasetMERT(Dataset):
 
         poslist = []
 
-        if self.preload:
-            # Use preloaded embeddings
-            poslist = [ContrDatasetMERT.embeddings[posset]]
+        # Load the embeddings from disk
+        emb_file = os.path.join(self.embs_dir, f"{posset}.json")
+        if os.path.isfile(emb_file):
+            try:
+                with open(emb_file, "r") as f:
+                    data = json.load(f)
+                    if posset in data:
+                        poslist = [data[posset][0]]
+                    else:
+                        print(f"[WARNING] Key '{posset}' not found in {emb_file}")
+                        poslist = [[0.0]]  # Placeholder
+            except json.JSONDecodeError:
+                print(f"[ERROR] Failed to decode JSON from {emb_file}")
+                poslist = [[0.0]]  # Placeholder
         else:
-            # Load the embeddings from disk
-            emb_file = os.path.join(self.embs_dir, f"{posset}.json")
+            print(f"[WARNING] Embedding file '{emb_file}' does not exist")
+            poslist = [[0.0]]  # Placeholder
+
+        neglist = []
+        for neg in negset:
+            emb_file = os.path.join(self.embs_dir, f"{neg}.json")
             if os.path.isfile(emb_file):
                 try:
                     with open(emb_file, "r") as f:
                         data = json.load(f)
-                        if posset in data:
-                            poslist = [data[posset][0]]
+                        if neg in data:
+                            neg_emb = data[neg][0]
                         else:
-                            print(f"[WARNING] Key '{posset}' not found in {emb_file}")
-                            poslist = [[0.0]]  # Placeholder
+                            print(f"[WARNING] Key '{neg}' not found in {emb_file}")
+                            neg_emb = [0.0]  # Placeholder
                 except json.JSONDecodeError:
                     print(f"[ERROR] Failed to decode JSON from {emb_file}")
-                    poslist = [[0.0]]  # Placeholder
+                    neg_emb = [0.0]  # Placeholder
             else:
                 print(f"[WARNING] Embedding file '{emb_file}' does not exist")
-                poslist = [[0.0]]  # Placeholder
-
-        neglist = []
-        for neg in negset:
-            if self.preload:
-                neg_emb = ContrDatasetMERT.embeddings[neg]
-                neglist.append(neg_emb)
-            else:
-                emb_file = os.path.join(self.embs_dir, f"{neg}.json")
-                if os.path.isfile(emb_file):
-                    try:
-                        with open(emb_file, "r") as f:
-                            data = json.load(f)
-                            if neg in data:
-                                neg_emb = data[neg][0]
-                            else:
-                                print(f"[WARNING] Key '{neg}' not found in {emb_file}")
-                                neg_emb = [0.0]  # Placeholder
-                    except json.JSONDecodeError:
-                        print(f"[ERROR] Failed to decode JSON from {emb_file}")
-                        neg_emb = [0.0]  # Placeholder
-                else:
-                    print(f"[WARNING] Embedding file '{emb_file}' does not exist")
-                    neg_emb = [0.0]  # Placeholder
-                neglist.append(neg_emb)
+                neg_emb = [0.0]  # Placeholder
+            neglist.append(neg_emb)
 
         posemb = torch.Tensor(poslist)
         # print(len(poslist))
@@ -250,7 +208,7 @@ class UserDefinedContrastiveDataset(Dataset):
         npos=1,
         nneg=1,
         batch_size=128,
-        num_workers=10,
+        # num_workers=10,
         partition="train",
         random_pool=None,
     ):
@@ -273,7 +231,7 @@ class UserDefinedContrastiveDataset(Dataset):
             all_songs_dataset,
             batch_size=batch_size,
             shuffle=False,
-            num_workers=num_workers,
+            # num_workers=num_workers,
         )
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

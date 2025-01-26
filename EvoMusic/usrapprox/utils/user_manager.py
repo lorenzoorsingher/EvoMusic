@@ -135,7 +135,7 @@ class UserManager:
                 npos=train_config.npos,
                 nneg=train_config.nneg,
                 batch_size=train_config.batch_size,
-                num_workers=train_config.num_workers,
+                # num_workers=train_config.num_workers,
                 partition="train",
                 random_pool=train_config.random_pool,
             )
@@ -148,7 +148,7 @@ class UserManager:
             dataset,
             batch_size=train_config.batch_size,
             shuffle=shuffle,
-            num_workers=train_config.num_workers,
+            # num_workers=train_config.num_workers,
         )
 
         if split == "train":

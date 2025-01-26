@@ -76,7 +76,7 @@ if __name__ == "__main__":
         npos=15,
         nneg=15,
         epochs=10,
-        num_workers=6,
+        # num_workers=6,
         lr=0.001,  # random_pool=20
     )
 
