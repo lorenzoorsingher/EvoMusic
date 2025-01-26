@@ -100,8 +100,8 @@ class MusicEvolver:
                 "fitness_conf": config.fitness.__dict__,
                 "generation_conf": music_generator.config.__dict__,
                 "LLM": {
-                    "model": config.LLM.model,
-                    "temperature": config.LLM.temperature,
+                    "model": config.LLM.model if config.LLM else "None",
+                    "temperature": config.LLM.temperature if config.LLM else "None",
                 },
                 "evotorch": config.evotorch,
             },
