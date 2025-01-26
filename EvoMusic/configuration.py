@@ -227,7 +227,7 @@ class searchConf:
         - "full LLM" : full LLM search, the current population with their fitness is passed to the LLM and we directly task him to generate the next population after reasoning
         - "LLM evolve" : the LLM is used to generate the next population by using base generic operators (crossover, mutation)
         - "CMAES", "PGPE", "XNES", "SNES", "CEM" : use the algorithms in the evotorch library
-        - "CoSyNE", "GA" : use the algorithms in the evotorch library
+        - "GA" : use the algorithms in the evotorch library
 
         NOTE:   the LLM evolve mode is only available when using the prompt optimization
                 while the last modes are available when using the embeddings optimization
@@ -277,7 +277,6 @@ class searchConf:
             "XNES",
             "SNES",
             "CEM",
-            "CoSyNE",
             "GA",
         ]
         assert self.mode in avail_modes, "Invalid search mode"
@@ -311,8 +310,16 @@ class evoConf:
 
     search: searchConf
     fitness: FitnessConfig
-    LLM: LLMConfig
     logger: evolutionLogger
+    
+    initialization: str = "LLM"  # initialization mode, can be "LLM" or "file"
+    """
+        Initialization mode:
+        - "LLM" : initialize the population using the LLM (need to specify the LLM)
+        - "file" : initialize the population using a file containing the prompts separated by a new line (need to specify the init_file)
+    """
+    init_file: str = ""  # path to the initialization file when using the "file" initialization
+    LLM: LLMConfig = None  # LLM configuration when using the LLM initialization
 
     device: str = (
         "cuda" if torch.cuda.is_available() else "cpu"
@@ -329,6 +336,19 @@ class evoConf:
 
     def __post_init__(self):
         self.logger.name = self.exp_name + "_" + wandb.util.generate_id()
+        
+        if self.initialization == "file":
+            assert os.path.exists(self.init_file), "Initialization file does not exist"
+        elif self.initialization == "LLM":
+            assert self.LLM is not None, "LLM configuration must be defined when using LLM initialization"
+            
+        assert self.generations > 0, "Number of generations must be greater than 0"
+        assert self.max_seq_len > 0, "Maximum sequence length must be greater than 0"
+        assert self.duration > 0, "Duration must be greater than 0"
+        assert self.best_duration > 0, "Best duration must be greater than 0"
+        
+        if self.search.mode in ["LLM evolve", "full LLM"]:
+            assert self.LLM is not None, "LLM configuration must be defined when using LLM evolve or full LLM search mode"
 
 
 # =================================================================================================
@@ -337,6 +357,7 @@ class evoConf:
 
 @dataclass
 class ProjectConfig:
+    epochs: int = 1  # maximum number of epochs to run the pipeline
     evolution: evoConf = None  # evolution configuration
 
     music_model: str = "musicgen"  # can either be "musicgen" or "riffusion"
@@ -348,6 +369,8 @@ class ProjectConfig:
     user_model: UserApproximationConfig = None  # user model configuration
 
     def __post_init__(self):
+        assert self.epochs > 0, "Number of epochs must be greater than 0"
+        
         assert self.music_model in [
             "musicgen",
             "riffusion",

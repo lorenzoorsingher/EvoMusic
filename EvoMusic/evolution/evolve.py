@@ -68,19 +68,6 @@ class MusicEvolver:
                 new_params = config.search.evotorch
                 params = {**default, **new_params}
                 self.optimizer = CEM(**params)
-            elif config.search.mode == "CoSyNE":
-                default = {
-                    "problem": self.problem,
-                    "popsize": config.search.population_size,   
-                    "tournament_size": 5,
-                    "elitism_ratio": config.search.elites,
-                    "mutation_probability": 0.5,
-                    "mutation_stdev": 5,
-                }
-                self.problem.epoch_pop = 0
-                new_params = config.search.evotorch
-                params = {**default, **new_params}
-                self.optimizer = Cosyne(**params)
             elif config.search.mode == "GA":
                 default = {
                     "problem": self.problem,

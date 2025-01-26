@@ -63,6 +63,7 @@ class EvoMusic:
     def __get_user_fitness(self, user_idx: int):
         user = self.user_manager.get_user(self.user_mapping[user_idx])
         def user_fitness(solution):
+            solution = solution.to(self.config.user_model.device)
             if self.config.evolution.search.mode == "user":
                 _,_,_, score = self.user_manager.get_user_score(user, solution)
             else:
@@ -157,15 +158,19 @@ class EvoMusic:
         self.epoch[user_idx] += 1
 
 
-    def generation_loop(self, user_idx: int = None, n_generations: int = None):
+    def generation_loop(self, user_idx: int = None, n_generations: int = None, epochs: int = None):
         """
         Evolve prompts or embeddings then finetune the user, rinse and repeat.
         
         Args:
             user_idx (int): Index of the user to evolve.
-            n_generations (int, optional): Number of generations to evolve. Defaults to None (uses config
+            n_generations (int, optional): Number of generations to evolve. Defaults to None (uses config value).
+            epochs (int, optional): Number of epochs to run. Defaults to None (uses config value).
         """
-        while True:
+        if epochs is None:
+            epochs = self.config.epochs
+        
+        for _ in range(epochs):
             self.single_step(user_idx, n_generations)
 
     def single_step(self, user_idx: int = None, n_generations: int = None):
