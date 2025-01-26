@@ -222,7 +222,7 @@ class UsersTrainManager:
         Note: The memory is offloaded to the cpu after each step of finetuning.
         """
         self.set_optimizer()
-        if epoch > 0 : wandb.log({"Epoch": epoch-1}) 
+        if epoch > 0 : wandb.log({"epoch": epoch-1}) 
 
         losses = []
 
