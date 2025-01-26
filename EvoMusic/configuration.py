@@ -99,7 +99,6 @@ class UserConfig:
 
 @dataclass
 class TrainConfig:
-    # USED ONLY FOR TEST TRAINING (training with offline data)
     splits_path: str = "usrembeds/data/splits.json"
     embs_path: str = "usrembeds/data/embeddings/embeddings_full_split"
     stats_path: str = "usrembeds/data/clean_stats.csv"  # used only by ContrDatasetMERT
@@ -124,22 +123,13 @@ class UserDefinition:
         assert self.user_type in ["real", "synth"], "Invalid user type"
         if self.user_type == "synth":
             assert self.target_user_id != -1, "Synth user must have a target user id"
-            
-@dataclass
-class UserTrainer:
-    lr: float = 0.001
-    epochs: int = 2
-    
-    def __post_init__(self):
-        assert self.epochs > 0, "Number of epochs must be greater than 0"
-        assert self.lr > 0, "Learning rate must be greater than 0"
 
 @dataclass
 class UserApproximationConfig:
     users: list[UserDefinition]
     aligner: AlignerV2Config = AlignerV2Config()
     user_conf: UserConfig = UserConfig()
-    train_conf: UserTrainer = UserTrainer()
+    train_conf: TrainConfig = TrainConfig()
     
     best_solutions: int = 10 # number of best solutions to keep
     
