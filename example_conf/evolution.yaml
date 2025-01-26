@@ -12,7 +12,7 @@ user_model:
   aligner:
     abs_file_path: "usrembeds/checkpoints/run_20241227_151619_best.pt"
   user_conf:
-    memory_lenthg: 50
+    memory_length: 50
     minibatch: False
     amount: 1
     init: "rmean"
