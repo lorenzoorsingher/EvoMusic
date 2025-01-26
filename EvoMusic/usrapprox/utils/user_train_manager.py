@@ -29,9 +29,9 @@ class UsersTrainManager:
             aligner_config=aligner_config,
             device=device,
         )
-        
+
         # wandb.init(
-        #     project="EvoUsers", 
+        #     project="EvoUsers",
         #     name="UsersTrainManager",
         #     config={
         #         "users_config": users_config.__dict__,
@@ -88,10 +88,10 @@ class UsersTrainManager:
 
         return info_nce_loss
 
-    def train_one_step(self, tracks: torch.Tensor, target_feedback: torch.Tensor,  user: User):
+    def train_one_step(
+        self, tracks: torch.Tensor, target_feedback: torch.Tensor, user: User
+    ):
         _, _, temperature, music_score = self._user_manager.user_step(user, tracks)
-
-        
 
         loss = self.__feedback_loss(music_score, target_feedback, temperature)
 
@@ -101,6 +101,13 @@ class UsersTrainManager:
         self._optimizer.step()
 
         return loss.item()
+
+    def eval_finetune(self, user: User, epoch):
+        if user.test_dataloader is None:
+            self._user_manager.load_dataset(user, self._train_config, "test")
+
+        dataloader = self.get_test_dataloader(user)
+        self.eval(dataloader, user, epoch)
 
     def eval(
         self,
@@ -187,8 +194,10 @@ class UsersTrainManager:
         wandb.log({f"user: {user.uuid} Validation/Abs Embedding": abs_diff})
         wandb.log({f"user: {user.uuid} Validation/MSE Embedding": mse_diff})
         wandb.log({f"user: {user.uuid} Validation/Loss": losses})
-        wandb.log({
-            f"user: {user.uuid} Validation/Cosine Model": average_cosine_similarity_on_model}
+        wandb.log(
+            {
+                f"user: {user.uuid} Validation/Cosine Model": average_cosine_similarity_on_model
+            }
         )
         wandb.log({f"user: {user.uuid} Validation/Cosine Scores": cosine_scores})
 
@@ -242,15 +251,19 @@ class UsersTrainManager:
                 loss = self.train_one_step(data, target_feedback, user)
                 losses.append(loss)
 
-        # if eval:
-        #     self.eval(batch, target_feedback, user, epoch)
+        if eval:
+            if isinstance(user, SynthUser):
+                self.eval_finetune(user, epoch)
+            else:
+                # not implemented error
+                raise NotImplementedError(
+                    "Not implemented! Eval for RealUser is a pain."
+                )
 
         # Offload memory to cpu
         self.set_memory_device(user, torch.device("cpu"))
 
-        wandb.log({
-            "Loss/finetune_user": torch.tensor(losses).mean().item()}
-        )
+        wandb.log({"Loss/finetune_user": torch.tensor(losses).mean().item()})
 
     def shuffle_and_create_minibatches(memory, feedback, batch_size):
         """
@@ -266,12 +279,14 @@ class UsersTrainManager:
             list of tuples: A list where each element is a tuple (memory_batch, feedback_batch).
         """
         if memory.shape[0] != feedback.shape[0]:
-            raise ValueError("Memory and feedback must have the same number of samples along the first dimension.")
-        
+            raise ValueError(
+                "Memory and feedback must have the same number of samples along the first dimension."
+            )
+
         # Shuffle indices for the first dimension
         num_samples = memory.shape[0]
         indices = torch.randperm(num_samples)
-        
+
         # Copy tensors to avoid modifying the original data
         memory = memory.copy()
         feedback = feedback.copy()
@@ -279,16 +294,15 @@ class UsersTrainManager:
         # Shuffle both tensors along the first dimension
         shuffled_memory = memory[indices]
         shuffled_feedback = feedback[indices]
-        
+
         # Split shuffled data into minibatches
         memory_batches = torch.split(shuffled_memory, batch_size)
         feedback_batches = torch.split(shuffled_feedback, batch_size)
-        
+
         # Combine memory and feedback minibatches
         minibatches = list(zip(memory_batches, feedback_batches))
-        
-        return minibatches
 
+        return minibatches
 
     def get_user_score(self, user: User, batch: torch.Tensor):
         """
@@ -393,12 +407,23 @@ class UsersTrainManager:
 
         self._user_manager.update_memory(user, batch, target_feedback)
 
-
     def get_memory(self, user: User) -> list[torch.Tensor, torch.Tensor]:
         """
         External API to get the memory of a user.
         """
         return self._user_manager.get_memory(user)
+
+    def get_train_dataloader(self, user: User):
+        """
+        External API to get the train dataloader of a user.
+        """
+        return user.train_dataloader
+
+    def get_test_dataloader(self, user: User):
+        """
+        External API to get the test dataloader of a user.
+        """
+        return user.test_dataloader
 
     def set_memory_device(self, user: User, device: torch.device):
         """

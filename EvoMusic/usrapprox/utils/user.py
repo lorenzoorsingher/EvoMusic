@@ -88,6 +88,9 @@ class User:
         """
         get the train dataloader.
         """
+        if self._train_dataloader is None:
+            raise ValueError("Train Dataloader not set.")
+
         return self._train_dataloader
 
     @property
@@ -95,6 +98,7 @@ class User:
         """
         get the test dataloader.
         """
+
         return self._test_dataloader
     
     @property

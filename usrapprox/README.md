@@ -1,0 +1,1 @@
+Take a look at `main1.py` on how to use the `finetune` method. Note that this sample is done to only demonstrate how to use it with fully static data (dataloaders), ofc you can inject data as you want to as the training data.
