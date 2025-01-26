@@ -1,99 +1,15 @@
-import json
 from tqdm import tqdm
 from EvoMusic.configuration import TrainConfig, UserConfig
-from EvoMusic.usrapprox.utils.user import RealUser, SynthUser, User
-from EvoMusic.usrapprox.utils.user_manager import UserManager
+from EvoMusic.usrapprox.utils.user import SynthUser, User
 from EvoMusic.usrapprox.utils.user_train_manager import UsersTrainManager
 
 import torch
-from torch.utils.data import DataLoader
 
 import wandb
 
 # seed and deterministic
 torch.manual_seed(0)
 # torch.backends.cudnn.deterministic = True
-
-# set tensorboard
-from torch.utils.tensorboard import SummaryWriter
-
-def load_datasets(
-        user_manager: UserManager, user: User, train_config: TrainConfig
-    ) -> tuple[DataLoader, DataLoader]:
-        """
-        This method is used to load the datasets.
-        """
-        from dataset import (
-            UserDefinedContrastiveDataset,
-            ContrDatasetWrapper,
-        )
-
-        if user.train_dataloader is None and user.test_dataloader is None:
-            if train_config.type == "ContrDatasetMERT":
-                print("Using ContrDatasetMERT")
-                with open(train_config.splits_path, "r") as f:
-                    splits = json.load(f)
-
-                train_dataset = ContrDatasetWrapper(
-                    train_config.embs_path,
-                    train_config.stats_path,
-                    split=splits["train"],
-                    usrs=user.user_id,
-                    nneg=train_config.nneg,
-                    multiplier=train_config.multiplier,
-                )
-
-                test_dataset = ContrDatasetWrapper(
-                    train_config.embs_path,
-                    train_config.stats_path,
-                    split=splits["test"],
-                    usrs=user.user_id,
-                    nneg=train_config.nneg,
-                    multiplier=train_config.multiplier,
-                )
-            else:
-                print("Using UserDefinedContrastiveDataset")
-                train_dataset = UserDefinedContrastiveDataset(
-                    alignerV2=user_manager.usr_emb,
-                    splits_path=train_config.splits_path,
-                    embs_path=train_config.embs_path,
-                    user_id=user.user_id,
-                    npos=train_config.npos,
-                    nneg=train_config.nneg,
-                    batch_size=train_config.batch_size,
-                    num_workers=train_config.num_workers,
-                    partition="train",
-                )
-
-                test_dataset = UserDefinedContrastiveDataset(
-                    alignerV2=user_manager.usr_emb,
-                    splits_path=train_config.splits_path,
-                    embs_path=train_config.embs_path,
-                    user_id=user.user_id,
-                    npos=train_config.npos,
-                    nneg=train_config.nneg,
-                    batch_size=train_config.batch_size,
-                    num_workers=train_config.num_workers,
-                    partition="test",
-                )
-
-            train_dataloader = torch.utils.data.DataLoader(
-                train_dataset,
-                batch_size=train_config.batch_size,
-                shuffle=True,
-                num_workers=train_config.num_workers,
-            )
-
-            test_dataloader = torch.utils.data.DataLoader(
-                test_dataset,
-                batch_size=train_config.batch_size,
-                shuffle=True,
-                num_workers=train_config.num_workers,
-            )
-
-            user.set_dataloaders(train_dataloader, test_dataloader)
-
-        return user.train_dataloader, user.test_dataloader
 
 def train(
         user_train_manager: UsersTrainManager,
@@ -103,15 +19,20 @@ def train(
     ):
         losses = []
 
-        user_train_manager._user_manager.clear_memory(user)
+        # user_train_manager._user_manager.clear_memory(user)
 
         user_train_manager._user_manager.usr_emb.eval()
         for tracks in tqdm(train_loader, desc="Training", leave=False):
-            user_train_manager._user_manager.update_memory(user, tracks)
-            tracks = user_train_manager._user_manager.get_memory(user)
             tracks = tracks.to(user_train_manager.device)
+            user_train_manager.update_memory(user, tracks)
+            user_train_manager.set_memory_device(user, user_train_manager.device)
+            tracks, feedbacks = user_train_manager.get_memory(user)
+            # tracks = tracks.to(user_train_manager.device)
+            # feedbacks = feedbacks.to(user_train_manager.device)
+            # user_train_manager._user_manager.usr_emb.to(user_train_manager.device)
 
-            loss = user_train_manager.train_one_step(tracks, user)
+            loss = user_train_manager.train_one_step(tracks, feedbacks, user)
+            
             losses.append(loss)
 
         wandb.log(
@@ -122,10 +43,9 @@ def test_train(
         user_train_manager: UsersTrainManager,
         user: User,
     ):
-        train_dataloader, test_dataloader = load_datasets(
-            user_train_manager._user_manager, user, user_train_manager._train_config
-        )
-
+        train_dataloader = user_train_manager._user_manager.load_dataset(user, user_train_manager._train_config, "train")
+        test_dataloader = user_train_manager._user_manager.load_dataset(user, user_train_manager._train_config, "test")
+        
         user_train_manager.set_optimizer()
 
         for epoch in tqdm(
@@ -152,10 +72,10 @@ if __name__ == "__main__":
         SynthUser(user + 5),
     ]  # , SynthUser(1)]
 
-    user_config = UserConfig(memory_length=1, amount=len(users))
+    user_config = UserConfig(memory_length=50, amount=len(users))
 
     user_train_config = TrainConfig(
-        batch_size=50, npos=15, nneg=15, epochs=20, num_workers=6, lr=0.001
+        batch_size=1, npos=15, nneg=15, epochs=10, num_workers=6, lr=0.001, #random_pool=20
     )
 
     # torch get device

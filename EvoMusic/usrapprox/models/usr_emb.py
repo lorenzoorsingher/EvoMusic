@@ -81,6 +81,7 @@ class UsrEmb(AlignerV2):
                 users_embedding.mean(dim=0)
                 + torch.randn(users_embedding.shape[1]).to(users_embedding.device) * rmean
             )
+        # TODO: add other initialization methods - distr weights -> std dim 1
 
         # attach on dimension 0 `n` times average_suer_embedding to the user embedding
         # `n` is the number of extra users, given by users_embedding.shape[0] and

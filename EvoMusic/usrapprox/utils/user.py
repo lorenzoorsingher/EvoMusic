@@ -13,9 +13,15 @@ class User:
         self._uuid = user_id
         self._user_id = None
         self._memory: MemoryBuffer = None
+        self._minibatch: bool = None
 
         self._train_dataloader = None
         self._test_dataloader = None
+
+    def set_minibatch(self, minibatch: bool):
+        if self._minibatch is not None:
+            raise ValueError("Minibatch already set.")
+        self._minibatch = minibatch
 
     def set_memory_size(self, memory_length: int):
         if self._memory is not None:
@@ -30,22 +36,26 @@ class User:
             raise ValueError("User ID already set.")
         self._user_id = user_id
 
-    def add_to_memory(self, batch: torch.Tensor):
-        self._memory.add_to_memory(batch)
+    def add_to_memory(self, batch: torch.Tensor, feedback: torch.Tensor):
+        self._memory.add_to_memory(batch, feedback)
 
     def empty_memory(self):
         self._memory.empty_memory()
 
-    def set_dataloaders(
-        self, train_dataloader: DataLoader, test_dataloader: DataLoader
+    def set_train_dataloader(
+        self, train_dataloader: DataLoader
     ):
-        """
-        set the dataloaders.
-        """
-        if self._train_dataloader is not None or self._test_dataloader is not None:
-            raise ValueError("Dataloaders already set.")
+        if self._train_dataloader is not None:
+            raise ValueError("Train Dataloader already set.")
 
         self._train_dataloader = train_dataloader
+
+    def set_test_dataloader(
+        self, test_dataloader: DataLoader
+    ):
+        if self._test_dataloader is not None:
+            raise ValueError("Test Dataloader already set.")
+
         self._test_dataloader = test_dataloader
 
     @property
@@ -86,6 +96,13 @@ class User:
         get the test dataloader.
         """
         return self._test_dataloader
+    
+    @property
+    def minibatch(self) -> bool:
+        """
+        get the minibatch.
+        """
+        return self._minibatch
 
 
 class SynthUser(User):

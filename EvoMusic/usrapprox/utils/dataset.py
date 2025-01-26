@@ -12,7 +12,6 @@ import concurrent.futures
 
 from EvoMusic.usrapprox.models.usr_emb import UsrEmb
 
-
 class ContrDatasetMERT(Dataset):
     # static embeddings variable to store the embeddings
     embeddings = {}
@@ -219,6 +218,7 @@ class AllSongsDataset(Dataset):
 
     def __len__(self):
         # return len(self.splits)
+        # return 50
         return 300
 
     def __get_embedding(self, idx):
@@ -239,7 +239,6 @@ class AllSongsDataset(Dataset):
         else:
             print("File does not exist")
             return [0.0]
-
 
 class UserDefinedContrastiveDataset(Dataset):
     def __init__(
@@ -312,9 +311,9 @@ class UserDefinedContrastiveDataset(Dataset):
         # set two value to randomly n,m with sum up to 30
         if self.random_pool != None:
             n, m = 0, 0
-            while n + m != 30:
-                n = torch.randint(1, 30, (1,))
-                m = 30 - n
+            while n + m != self.random_pool:
+                n = torch.randint(1, self.random_pool, (1,))
+                m = self.random_pool - n
 
             pos_samples = torch.randperm(len(self.positive_samples))[:m]
             neg_samples = torch.randperm(len(self.negative_samples))[:n]
@@ -337,6 +336,7 @@ class UserDefinedContrastiveDataset(Dataset):
 
     def __len__(self):
         # return len(self.positive_samples) #+ len(self.negative_samples)
+        # return 50
         return 300
 
     def __get_embedding(self, song_id):

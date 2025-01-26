@@ -87,9 +87,11 @@ class AlignerV2Config:
 @dataclass
 class UserConfig:
     memory_length: int = 0  # number of tracks to remember
+    minibatch: bool = False
     amount: int = 1 # number of users
     init: str = "mean"  # "random" or "mean" or "rmean"
     rmean: float = 0.1  # used only if init is "rmean" - weight of the random noise
+
     
     def __post_init__(self):
         assert self.init in ["random", "mean", "rmean"], "Invalid init mode"
@@ -106,8 +108,9 @@ class TrainConfig:
     batch_size: int = 128
     num_workers: int = 10
     multiplier: int = 50  # used only by ContrDatasetMert
-    type: str = "ContrDatasetMERT"  # ContrDatasetMERT or anything
+    type: str = "UserDefinedContrastiveDataset"  # UserDefinedContrastiveDataset (use this one) or ContrDatasetMERT
     epochs: int = 20
+    random_pool: bool = None
 
     # COMMON
     lr: float = 0.001

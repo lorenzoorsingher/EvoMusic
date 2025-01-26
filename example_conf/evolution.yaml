@@ -11,6 +11,7 @@ user_model:
     abs_file_path: "usrembeds/checkpoints/run_20241227_151619_best.pt"
   user_conf:
     memory_lenthg: 50
+    minibatch: False
     amount: 1
     init: "rmean"
 
@@ -21,11 +22,11 @@ user_model:
 evolution:
   exp_name: "default"
 
-  generations: 10 # number of generations to run the evolution for
+  generations: 10 # number of generations to run the evolution for # 5
 
   max_seq_len: 5 # maximum number of tokens in the prompt when using mode token or embeddings
-  duration: 5 # duration of the generated music in seconds
-  best_duration: 10 # duration of the best music in seconds
+  duration: 2 # duration of the generated music in seconds
+  best_duration: 5 # duration of the best music in seconds
 
   device: "cpu"
 
@@ -53,7 +54,7 @@ evolution:
     mode: "LLM evolve" # available modes are full LLM, LLM evolve, CMAES, PGPE, XNES, SNES, CEM, CoSyNE, GA
     
     # general search parameters
-    population_size: 50 # size of the population
+    population_size: 50 # size of the population 25
     
     sample: True # use sampling for all opearations (both selecting individual and applying operators)
     temperature: 0.2 # temperature to use for the sampling (note: the original values are [-1,1] so we advise lower values)

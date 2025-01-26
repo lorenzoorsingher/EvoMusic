@@ -77,14 +77,10 @@ class UsersTrainManager:
 
         return info_nce_loss
 
-    def train_one_step(self, tracks: torch.Tensor, user: User):
+    def train_one_step(self, tracks: torch.Tensor, target_feedback: torch.Tensor,  user: User):
         _, _, temperature, music_score = self._user_manager.user_step(user, tracks)
 
-        _, _, _, target_score = self._user_manager.feedback_step(user, tracks)
-
-        target_feedback = self._score_to_feedback.get_feedback(target_score).to(
-            self.device
-        )
+        
 
         loss = self.__feedback_loss(music_score, target_feedback, temperature)
 
@@ -199,28 +195,88 @@ class UsersTrainManager:
         Batch is expected to be a tensor on `self.device`.
         The memory is offloaded from the gpu to the cpu after each step of finetuning.
 
-        You can iterate on the same batch multiple times, to do so just set the `epochs` parameter in the `TrainConfig` object to something greater than 1.
-        """
-        """
-        - mettere i dati in memoria, non svuotarla MAI
-        - fare il train coi dati che hai, si itera per un numero di epoche n
+        -  You can iterate on the same batch multiple times, to do so just set the `epochs` parameter in the `TrainConfig` object to something greater than 1.
+        OR
+        - You can set the `minibatch` parameter in the `UserConfig` object to True to use minibatching.
+
+        Note: The memory is offloaded to the cpu after each step of finetuning.
         """
         self.set_optimizer()
 
         losses = []
-        for _ in tqdm(
-            range(self._train_config.epochs),
-            desc=f"Finetuning user {user.uuid} | {user.user_id} | ref: {user.model_reference_id}",
-        ):
-            loss = self.train_one_step(batch, user)
-            losses.append(loss)
 
-        if eval:
-            self.eval(batch, user, epoch)
+        # Update memory
+        self.update_memory(user, batch)
+        self.set_memory_device(user, self.device)
+        data, target_feedback = self.get_memory(user)
+
+        if user.minibatch:
+            # USE MINIBATCHING
+            minibatches = self.shuffle_and_create_minibatches(
+                data, target_feedback, self._train_config.batch_size
+            )
+
+            for data, target_feedback in tqdm(
+                minibatches,
+                desc=f"Finetuning user {user.uuid} | {user.user_id} | ref: {user.model_reference_id}",
+            ):
+                loss = self.train_one_step(data, target_feedback, user)
+                losses.append(loss)
+        else:
+            for _ in tqdm(
+                range(self._train_config.epochs),
+                desc=f"Finetuning user {user.uuid} | {user.user_id} | ref: {user.model_reference_id}",
+            ):
+                loss = self.train_one_step(data, target_feedback, user)
+                losses.append(loss)
+
+        # if eval:
+        #     self.eval(batch, target_feedback, user, epoch)
+
+        # Offload memory to cpu
+        self.set_memory_device(user, torch.device("cpu"))
 
         wandb.log({
             "Loss/finetune_user": torch.tensor(losses).mean().item()}, step=epoch
         )
+
+    def shuffle_and_create_minibatches(memory, feedback, batch_size):
+        """
+        Shuffle data along the first dimension and create minibatches.
+        The memory and feedback tensors are assumed to already be aligned in their final concatenated shapes.
+
+        Args:
+            memory (torch.Tensor): The memory tensor with shape [total_samples, n_song_embedding, ...].
+            feedback (torch.Tensor): The feedback tensor with shape [total_samples, n_song_feedbacks].
+            batch_size (int): The size of each minibatch.
+
+        Returns:
+            list of tuples: A list where each element is a tuple (memory_batch, feedback_batch).
+        """
+        if memory.shape[0] != feedback.shape[0]:
+            raise ValueError("Memory and feedback must have the same number of samples along the first dimension.")
+        
+        # Shuffle indices for the first dimension
+        num_samples = memory.shape[0]
+        indices = torch.randperm(num_samples)
+        
+        # Copy tensors to avoid modifying the original data
+        memory = memory.copy()
+        feedback = feedback.copy()
+
+        # Shuffle both tensors along the first dimension
+        shuffled_memory = memory[indices]
+        shuffled_feedback = feedback[indices]
+        
+        # Split shuffled data into minibatches
+        memory_batches = torch.split(shuffled_memory, batch_size)
+        feedback_batches = torch.split(shuffled_feedback, batch_size)
+        
+        # Combine memory and feedback minibatches
+        minibatches = list(zip(memory_batches, feedback_batches))
+        
+        return minibatches
+
 
     def get_user_score(self, user: User, batch: torch.Tensor):
         """
@@ -307,6 +363,36 @@ class UsersTrainManager:
         External API to clear the memory of a user.
         """
         self._user_manager.clear_memory(user)
+
+    def update_memory(self, user: User, batch: torch.Tensor):
+        """
+        External API to set the memory of a user.
+        It calculates/gets the feedback from a real/synthetic user and updates the memory of the user.
+        """
+
+        _, _, _, target_score = self._user_manager.feedback_step(user, batch)
+
+        target_feedback = self._score_to_feedback.get_feedback(target_score).to(
+            self.device
+        )
+
+        # print(f"target_feedback: {target_feedback.shape}")
+        # print(f"batch: {batch.shape}")
+
+        self._user_manager.update_memory(user, batch, target_feedback)
+
+
+    def get_memory(self, user: User) -> list[torch.Tensor, torch.Tensor]:
+        """
+        External API to get the memory of a user.
+        """
+        return self._user_manager.get_memory(user)
+
+    def set_memory_device(self, user: User, device: torch.device):
+        """
+        External API to set the device of the memory of a user.
+        """
+        self._user_manager.set_memory_device(user, device)
 
     def save_weights():
         raise NotImplementedError("Not implemented yet.")
