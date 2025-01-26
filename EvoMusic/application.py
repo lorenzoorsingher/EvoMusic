@@ -11,8 +11,6 @@ import torch
 import numpy as np
 import random
 
-import gradio as gr
-
 class EvoMusic:
     def __init__(self, config_path: str):
         self.config = load_yaml_config(config_path)
@@ -201,6 +199,8 @@ class EvoMusic:
         """
         Start the evolution process with an UI. (users only)
         """
+        import gradio as gr
+        
         def run_evolution(user_index, n_generations):
             music = self.single_step(int(user_index), int(n_generations))
             return "Evolution completed", music
