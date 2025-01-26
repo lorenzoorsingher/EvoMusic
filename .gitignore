@@ -172,6 +172,7 @@ cython_debug/
 *.mp3
 *.json
 generated_audio/
+local/
 *.zip
 *.csv
 *.pt
