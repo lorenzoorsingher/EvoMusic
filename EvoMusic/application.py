@@ -91,6 +91,7 @@ class EvoMusic:
             # Evolve the user
             user_fitness = self.__get_user_fitness(user_idx)
         else:
+            # the internal fitness already computes the similarity with the reference
             user_fitness = None
         
         results = self.evolver.evolve(n_generations=n_generations, user_fitness=user_fitness)
@@ -156,7 +157,7 @@ class EvoMusic:
         self.epoch[user_idx] += 1
 
 
-    def generation_loop(self, user_idx: int, n_generations: int = None):
+    def generation_loop(self, user_idx: int = None, n_generations: int = None):
         """
         Evolve prompts or embeddings then finetune the user, rinse and repeat.
         
@@ -167,7 +168,7 @@ class EvoMusic:
         while True:
             self.single_step(user_idx, n_generations)
 
-    def single_step(self, user_idx: int, n_generations: int = None):
+    def single_step(self, user_idx: int = None, n_generations: int = None):
         """
         Perform a single step of evolution and finetuning.
         
@@ -175,9 +176,9 @@ class EvoMusic:
             user_idx (int): Index of the user to evolve.
             n_generations (int, optional): Number of generations to evolve. Defaults to None (uses config
         """
-        print ("\n\n===========================================================================")
-        print (f"Performing a single step of evolution and finetuning for user {user_idx}")
-        print ("===========================================================================")
+        print ("\n\n=====================================================================================================")
+        print (f"Performing a single step of evolution and finetuning for user {user_idx} epoch {self.epoch[user_idx]}")
+        print ("=====================================================================================================")
         
         results = self.evolve(user_idx, n_generations)
         if not os.path.exists(self.music_generator.config.output_dir+"/music_"+str(user_idx)):
@@ -185,15 +186,15 @@ class EvoMusic:
         music = self.generate_music(results, f"music_{user_idx}/{self.epoch[user_idx]}")
         self.finetune_user(music, user_idx)
         
-        print ("===============================================================")
-        print (f"Evolution and finetuning for user {user_idx} completed")
-        print ("===============================================================")
+        print ("===========================================================================================")
+        print (f"Evolution and finetuning for user {user_idx} completed for epoch {self.epoch[user_idx]}")
+        print ("===========================================================================================")
         
         return music
         
     def start(self):
         """
-        Start the evolution process with an UI.
+        Start the evolution process with an UI. (users only)
         """
         def run_evolution(user_index, n_generations):
             music = self.single_step(int(user_index), int(n_generations))
