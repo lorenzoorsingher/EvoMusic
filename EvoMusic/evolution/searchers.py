@@ -330,6 +330,6 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
             raise ValueError("Invalid search mode")
         
         # print new population
-        print("Current Population:\n\t- ", "\n\t- ".join(self._population.values))
+        # print("Current Population:\n\t- ", "\n\t- ".join(self._population.values))
         
         self._problem.evaluate(self.population)

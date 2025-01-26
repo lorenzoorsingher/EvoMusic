@@ -29,6 +29,17 @@ class UsersTrainManager:
             aligner_config=aligner_config,
             device=device,
         )
+        
+        # wandb.init(
+        #     project="EvoUsers", 
+        #     name="UsersTrainManager",
+        #     config={
+        #         "users_config": users_config.__dict__,
+        #         "train_config": train_config.__dict__,
+        #         "aligner_config": aligner_config.__dict__,
+        #         "device": device,
+        #     }
+        # )
 
         self._train_config = train_config
         self._optimizer = None
@@ -173,13 +184,13 @@ class UsersTrainManager:
         ).mean()
 
         # Log
-        wandb.log({f"user: {user.uuid} Validation/Abs Embedding": abs_diff}, step=epoch)
-        wandb.log({f"user: {user.uuid} Validation/MSE Embedding": mse_diff}, step=epoch)
-        wandb.log({f"user: {user.uuid} Validation/Loss": losses}, step=epoch)
+        wandb.log({f"user: {user.uuid} Validation/Abs Embedding": abs_diff})
+        wandb.log({f"user: {user.uuid} Validation/MSE Embedding": mse_diff})
+        wandb.log({f"user: {user.uuid} Validation/Loss": losses})
         wandb.log({
-            f"user: {user.uuid} Validation/Cosine Model": average_cosine_similarity_on_model}, step=epoch
+            f"user: {user.uuid} Validation/Cosine Model": average_cosine_similarity_on_model}
         )
-        wandb.log({f"user: {user.uuid} Validation/Cosine Scores": cosine_scores}, step=epoch)
+        wandb.log({f"user: {user.uuid} Validation/Cosine Scores": cosine_scores})
 
     def set_optimizer(self):
         if self._optimizer is None:
@@ -202,6 +213,7 @@ class UsersTrainManager:
         Note: The memory is offloaded to the cpu after each step of finetuning.
         """
         self.set_optimizer()
+        wandb.log({"Epoch": epoch})
 
         losses = []
 
@@ -237,7 +249,7 @@ class UsersTrainManager:
         self.set_memory_device(user, torch.device("cpu"))
 
         wandb.log({
-            "Loss/finetune_user": torch.tensor(losses).mean().item()}, step=epoch
+            "Loss/finetune_user": torch.tensor(losses).mean().item()}
         )
 
     def shuffle_and_create_minibatches(memory, feedback, batch_size):

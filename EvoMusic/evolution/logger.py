@@ -114,9 +114,9 @@ class LivePlotter(Logger):
             plt.draw()
 
         if self.config.wandb:
-            wandb.log({"Average Fitness": avg_fitness}, step=current_iter)
-            wandb.log({"Best Fitness": best_fitness}, step=current_iter)
-            wandb.log({"Worst Fitness": worst}, step=current_iter)
+            wandb.log({"Average Fitness": avg_fitness})
+            wandb.log({"Best Fitness": best_fitness})
+            wandb.log({"Worst Fitness": worst})
             
             if self.problem.text_mode:
                 # get all the prompts
@@ -130,7 +130,7 @@ class LivePlotter(Logger):
                 # table = wandb.Table(columns=["Prompt", "Fitness"])
                 # for prompt, fitness in zip(prompts, evals):
                 #     table.add_data(prompt, fitness)
-                # wandb.log({"Prompts Table": table}, step=current_iter)
+                # wandb.log({"Prompts Table": table})
         
         if self.problem.text_mode:
             print(f"\nIteration: {current_iter} | Average Fitness: {avg_fitness} | Worst Fitness: {worst} | Best Fitness: {best_fitness} | time: {time_diff:.2f}s | avg time: {self.avg_time:.2f}s | Best Prompt: {best}\n")
@@ -145,9 +145,9 @@ class LivePlotter(Logger):
         
         if self.config.wandb:
             if self.problem.text_mode:
-                wandb.log({"Best Audio": wandb.Audio(best_audio_path, caption=best)}, step=current_iter)
+                wandb.log({"Best Audio": wandb.Audio(best_audio_path, caption=best)})
             else:
-                wandb.log({"Best Audio": wandb.Audio(best_audio_path)}, step=current_iter)
+                wandb.log({"Best Audio": wandb.Audio(best_audio_path)})
                 
         self.start_time = time.time()
 
