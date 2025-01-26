@@ -105,7 +105,7 @@ class TrainConfig:
     npos: int = 1
     nneg: int = 4
     batch_size: int = 128
-    num_workers: int = 10
+    # num_workers: int = 10
     multiplier: int = 50  # used only by ContrDatasetMert
     type: str = "UserDefinedContrastiveDataset"  # UserDefinedContrastiveDataset (use this one) or ContrDatasetMERT
     epochs: int = 20
