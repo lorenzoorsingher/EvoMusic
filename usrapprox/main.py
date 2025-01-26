@@ -75,7 +75,9 @@ if __name__ == "__main__":
     user_config = UserConfig(memory_length=50, amount=len(users))
 
     user_train_config = TrainConfig(
-        batch_size=1, npos=15, nneg=15, epochs=10, num_workers=6, lr=0.001, #random_pool=20
+        batch_size=1, npos=15, nneg=15, epochs=10, 
+        # num_workers=6, 
+        lr=0.001, #random_pool=20
     )
 
     # torch get device
