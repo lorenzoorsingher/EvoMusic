@@ -1,4 +1,5 @@
 import gc
+import math
 import os
 import time
 import requests
@@ -11,6 +12,7 @@ from evotorch.neuroevolution import GymNE, VecGymNE
 from evotorch.algorithms import SearchAlgorithm
 from evotorch.algorithms.searchalgorithm import SinglePopulationAlgorithmMixin
 import torch
+from tqdm import tqdm
 
 from EvoMusic.evolution.fitness import MusicScorer
 from EvoMusic.music_generation.generators import MusicGenerator
@@ -25,6 +27,7 @@ class LLMPromptGenerator():
         """
         Query the LLM API with the given prompt.
         """
+        # print(f"\t[LLM] sent request to LLM")
         # print(f"Querying LLM with prompt: '{prompt}'")
         headers = {
             "Content-Type": "application/json",
@@ -35,7 +38,7 @@ class LLMPromptGenerator():
             "messages": [
                 {
                     "role": "system",
-                    "content": "You produce prompts used to generate music following the requests of the user. You should always respond with the requested prompts by encasing each one of the **final** produced prompts in <prompt> and </prompt> tags. Like the followings:\n 1. <prompt> A music prompt. </prompt>\n 2. <prompt> Another music prompt. </prompt>",
+                    "content": "You produce prompts used to generate music following the requests of the user. You should always respond with the requested prompts by encasing each one in <prompt> and </prompt> tags. Examples of valid output prompts are:\n 1. <prompt> Text of prompt. </prompt>\n 2. <prompt> Another prompt. </prompt>",
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -49,10 +52,11 @@ class LLMPromptGenerator():
             response.raise_for_status()
             llm_response = response.json()["choices"][0]["message"]["content"].strip()
             # print(f"LLM responded with: '{llm_response}'")
+            # print(f"\t[LLM] API request successful")
             return llm_response
         except Exception as e:
-            print(f"LLM API request failed: {e}")
-            return "A default music prompt."
+            print(f"\t[LLM] API request failed: {e}")
+            return ""
         
     def parse_llm_response(self, response: str):
         """
@@ -111,10 +115,13 @@ class LLMEvolutionOperator():
         assert len(inputs) == self.config.input, f"Input size is not equal to the expected size of {self.config.input}"
         output = []
         
+        
         execute = np.random.rand() < self.config.probability
         if not execute:
             # sample from inputs without applying the operator
             return np.random.choice(inputs, self.config.output, replace=False).tolist()
+        
+        # print(f"\t[LLM evolve] Applying operator {self.config.name}")
         
         while len(output) < self.config.output:
             # generate new prompts using LLM
@@ -125,6 +132,8 @@ class LLMEvolutionOperator():
             generated_prompts = self.LLM_model.parse_llm_response(answers)
             
             output += generated_prompts[: self.config.output - len(output)]
+        
+        # print(f"\t[LLM evolve] Operator {self.config.name} applied successfully")
             
         return output
 
@@ -305,7 +314,8 @@ class PromptSearcher(SearchAlgorithm, SinglePopulationAlgorithmMixin):
         old_population = self.population.values
         old_pop_evals = self.population.evals
         
-        while len(new_population) < self.config.population_size:
+        print("[LLM evolve] Applying genetic operators...")
+        for _ in tqdm(range(math.ceil(self.config.population_size / self.config.LLM_genetic_operators[-1].output))):
             # select the individuals for the tournament
             selected_population = self.tournament_selection(old_population, old_pop_evals, self.config.LLM_genetic_operators[0].input)
             

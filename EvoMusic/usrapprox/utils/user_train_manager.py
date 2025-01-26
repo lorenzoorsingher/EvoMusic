@@ -222,7 +222,7 @@ class UsersTrainManager:
         Note: The memory is offloaded to the cpu after each step of finetuning.
         """
         self.set_optimizer()
-        wandb.log({"Epoch": epoch})
+        if epoch > 0 : wandb.log({"Epoch": epoch-1}) 
 
         losses = []
 
@@ -262,8 +262,11 @@ class UsersTrainManager:
 
         # Offload memory to cpu
         self.set_memory_device(user, torch.device("cpu"))
-
-        wandb.log({"Loss/finetune_user": torch.tensor(losses).mean().item()})
+        
+        wandb.log({"epoch": epoch})
+        wandb.log({
+            "Loss/finetune_user": torch.tensor(losses).mean().item()}
+        )
 
     def shuffle_and_create_minibatches(memory, feedback, batch_size):
         """

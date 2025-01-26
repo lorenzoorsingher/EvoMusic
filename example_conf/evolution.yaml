@@ -1,3 +1,5 @@
+epochs: 10
+
 music_generator:
   model: "facebook/musicgen-small"
   input_type: "text" # input type for the music generator, can be either text, token_embeddings or embeddings
@@ -29,6 +31,9 @@ evolution:
   best_duration: 5 # duration of the best music in seconds
 
   device: "cpu"
+
+  initialization: "LLM" # can either be "LLM" or "file"
+  init_file: "EvoMusic/music_generation/init_prompts.txt" # path to init file
 
   logger:
     wandb: True # whether to use wandb for logging

@@ -1,3 +1,4 @@
+import random
 from evotorch.core import Problem, Solution
 from EvoMusic.configuration import evoConf
 from EvoMusic.music_generation.generators import MusicGenerator
@@ -50,11 +51,12 @@ class MusicOptimizationProblem(Problem):
         """
         start_time = time.time()
         self.generated += 1
-
+        
         generator_input = solution.values
         if not self.text_mode:
             # copy the input to a new tensor as the values are read-only
-            generator_input = solution.values.clone().detach()
+            generator_input = solution.values.clone().detach() 
+        
         audio_path = self.music_generator.generate_music(input=generator_input, duration=self.evo_config.duration, name=f"music_intermediate")
 
         # Compute the embedding of the generated music
@@ -108,23 +110,46 @@ class MusicOptimizationProblem(Problem):
 
         processed_prompts = []
 
-        while len(processed_prompts) < population:
-            # Generate diverse prompts for the initial population
-            prompts = self.LLM_model.generate_prompts(population)
+        if self.evo_config.initialization == "LLM":
+            while len(processed_prompts) < population:
+                # Generate diverse prompts for the initial population
+                prompts = self.LLM_model.generate_prompts(population)
+                
+                # if not in text mode, then check if the embeddings are valid
+                if not self.text_mode:
+                    processed = self.music_generator.preprocess_text(prompts, self.evo_config.max_seq_len)
+                    processed = [prompt for prompt in processed if prompt.shape[0] == self.evo_config.max_seq_len]
+                else:
+                    processed = prompts
+                
+                processed_prompts += processed[: population - len(processed_prompts)]
+        else:
+            with open(self.evo_config.init_file, "r") as f:
+                prompts_pool = f.readlines()
+            # check if the pool is large enough
+            if len(prompts_pool) < population:
+                raise ValueError(f"Initial population size {population} is larger than the number of prompts in the init file {len(prompts_pool)}")
             
-            # if not in text mode, then check if the embeddings are valid
-            if not self.text_mode:
-                processed = self.music_generator.preprocess_text(prompts, self.evo_config.max_seq_len)
-                processed = [prompt for prompt in processed if prompt.shape[0] == self.evo_config.max_seq_len]
-            else:
-                processed = prompts
+            while len(processed_prompts) < population:
+                # randomly sample prompts from the pool
+                prompts = random.sample(prompts_pool, population-len(processed_prompts))
+                # strip "\n" from the prompts
+                prompts = [prompt.strip() for prompt in prompts]
+                
+                # if not in text mode, then check if the embeddings are valid
+                if not self.text_mode:
+                    processed = self.music_generator.preprocess_text(prompts, self.evo_config.max_seq_len)
+                    processed = [prompt for prompt in processed if prompt.shape[0] == self.evo_config.max_seq_len]
+                else:
+                    processed = prompts
+                    
+                processed_prompts += processed[: population - len(processed_prompts)]
+                print(f"Processed {len(processed_prompts)}/{population} prompts", end="\r")
             
-            processed_prompts += processed[: population - len(processed_prompts)]
-        
     
         if self.text_mode:
             # values is an object array
-            for i,prompt in enumerate(prompts):
+            for i,prompt in enumerate(processed_prompts):
                 values.set_item(i, prompt)
         else:
             processed_prompts = torch.stack(processed_prompts)

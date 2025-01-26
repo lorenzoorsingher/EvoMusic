@@ -661,7 +661,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--json_file",
         type=str,
-        default="generated_audio/music_generation_prompts_by_genre.json",
+        default="visualizations/music_generation_prompts_by_genre.json",
         help="Path to the JSON file containing music prompts categorized by genre."
     )
     parser.add_argument(
