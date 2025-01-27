@@ -2,6 +2,10 @@ checkpoints/
 data/
 runs/
 wandb/
+runs/
+
+*.json
+*.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -165,3 +169,26 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# Data
+
+*.wav
+*.mp3
+*.json
+generated_audio/
+local/
+*.zip
+*.csv
+*.pt
+*.pth
+*.rar
+
+# wandb
+wandb/
+
+# exceptions
+!usrembeds/data/splits.json
+!usrembeds/data/clean_stats.csv
+!usrembeds/exp/*
+config.yaml
+conf.yaml

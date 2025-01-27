@@ -1,0 +1,110 @@
+epochs: 10
+
+music_generator:
+  model: "facebook/musicgen-small"
+  input_type: "text" # input type for the music generator, can be either text, token_embeddings or embeddings
+  output_dir: "generated_audio"
+  name: "musicgen"
+
+music_model: "musicgen"
+
+user_model:
+  aligner:
+    abs_file_path: "usrembeds/checkpoints/run_20241227_151619_best.pt"
+  user_conf:
+    memory_length: 50
+    minibatch: False
+    amount: 1
+    init: "rmean"
+
+  users:
+    - user_type: "synth"
+    - target_user_id: 0
+
+evolution:
+  exp_name: "default"
+
+  generations: 10 # number of generations to run the evolution for # 5
+
+  max_seq_len: 5 # maximum number of tokens in the prompt when using mode token or embeddings
+  duration: 2 # duration of the generated music in seconds
+  best_duration: 5 # duration of the best music in seconds
+
+  device: "cpu"
+
+  initialization: "LLM" # can either be "LLM" or "file"
+  init_file: "EvoMusic/music_generation/init_prompts.txt" # path to init file
+
+  logger:
+    wandb: True # whether to use wandb for logging
+    project: "MusicEvo" # wandb project name
+
+    wandb_token: "WANDB_TOKEN" # wandb token
+
+    visualizations: False # whether to use visualizations
+
+  LLM: 
+    api_key: "API_KEY"
+    temperature: 0.7
+    model: "gpt-4o-mini"
+    api_uri : "https://api.openai.com/v1/chat/completions" # needs to be an OpenAI API compatible endpoint
+
+  fitness:
+    mode: "user" # can either be user, music or dynamic
+    target_user: 0 # static target user for mode user
+    target_music: "" # path to the target music for mode music
+    noise_weight: 0.5 # noise weight for the fitness function
+
+  search:
+    mode: "LLM evolve" # available modes are full LLM, LLM evolve, CMAES, PGPE, XNES, SNES, CEM, CoSyNE, GA
+    
+    # general search parameters
+    population_size: 50 # size of the population 25
+    
+    sample: True # use sampling for all opearations (both selecting individual and applying operators)
+    temperature: 0.2 # temperature to use for the sampling (note: the original values are [-1,1] so we advise lower values)
+    novel_prompts: 0.1 # fraction of poupulation to create ex-novo, range [0,1]
+    elites : 0.1 # fraction of population to keep from the previous, range [0,1]
+    
+    # full LLM parameters
+    full_LLM_prompt:
+    "Generate {num_generate} music prompts for generating music based on the classification and scores of the previous prompts. 
+You should balance exploration and exploitation to maximize the score.
+BEFORE giving the music prompts, you should spend time to reason on the classification and scores of the previous prompts, and understand what makes a prompt successful for the user, what makes it fail, how to combine the acquired knowledge and where we are not exploring, for example if a music generne is not being explored or if the prompts are too similar.
+You should also try to understand and reason about the user preferences based on the scores and the classification of the prompts, and how to exploit this knowledge to generate better prompts.
+AFTER this careful reasoning about the current evaluation, you should generate a diverse set of prompts that are likely to be successful tying to not repeat te same patterns and content in the requested format.
+
+Here is the current population with their similarity scores and ranking for the current generation:
+{ranking}
+
+after the reasonin, generate only the next generation of prompts with a population of {num_generate} prompts."
+    
+    # LLM evolve parameters
+    tournament_size: 5 # size of the tournament for selection
+    LLM_genetic_operators: 
+    # genetic operators to use when using the LLM evolve mode 
+    # NOTE: they are applied to the whole population one by one
+    # you can create operators that apply multiple opearations at the same time by describing what you want the LLM to do
+    # do not use anywhere the <propt> </prompt> tags, as they are used to extract the final output from the LLM
+      - name: "cross over"
+        prompt: "take the two prompts provided and cross them over by mixing components of both {prompts}"
+        input: 2 # number of parents
+        output: 1 # number of children
+        probability: 0.5 # the probability of applying the operator
+      - name: "change genere"
+        prompt: "take the prompt and change the genre of the music used {prompts}"
+        input: 1 # number of parents
+        output: 1 # number of children
+        probability: 0.5
+      - name: "random mutation"
+        input: 1 # number of parents
+        output: 1 # number of children
+        prompt: "take the prompt and mutate it, you can choose to mutate any of the words in the prompt {prompts}"
+        probability: 0.5
+    
+    # evotorch parameters
+    evotorch: # additional parameters for the search algorithm when using evotorch's algorithms
+      parameter1: "value1" 
+
+
+  

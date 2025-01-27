@@ -1,0 +1,77 @@
+music_generator:
+  model: "facebook/musicgen-small"
+  input_type: "text" # input type for the music generator, can be either text, token_embeddings or embeddings
+  output_dir: "generated_audio"
+  name: "musicgen"
+
+riffusion_pipeline:
+  input_type: "embeddings"
+  output_dir: "generated_audio"
+  name: "riffusion"
+  inference_steps: 25
+
+music_model: "musicgen"
+
+user_model:
+  aligner:
+    abs_file_path: "usrembeds/checkpoints/AlignerV2_best_model.pt"
+  user_conf:
+    memory_length: 50
+    amount: 1
+    init: "rmean" # mean rand rmean
+  train_conf:
+    lr: 0.001
+    epochs: 5
+  
+  best_solutions: 10
+
+  users:
+    - user_type: "synth"
+      target_user_id: 0
+
+
+evolution:
+  exp_name: "GPT-evolve-riff"
+
+  generations: 100 # number of generations to run the evolution for
+
+  max_seq_len: 20 # maximum number of tokens in the prompt when using mode token or embeddings
+  duration: 2 # duration of the generated music in seconds
+  best_duration: 10 # duration of the best music in seconds
+
+  device: "cpu" # device to run the evolution on, can be either cpu or cuda
+
+  fitness:
+    mode: "user" # can either be user, music or dynamic
+    # target_music: "generated_audio/breaking_me_down.wav" # path to the target music for mode music
+    target_music: "generated_audio/04. For Leah.flac"
+    # target_music: "generated_audio/duckstep.mp3"
+    noise_weight: 0.25 # noise weight for the fitness function
+
+
+  logger:
+    wandb: False # whether to use wandb for logging
+    project: "MusicEvo" # wandb project name
+
+    wandb_token: "eb11f515807faab43e97f886157b349f0348f0ed" # wandb token
+
+    visualizations: False # whether to use visualizations
+
+  
+  LLM: 
+    api_key: "" # OpenAI API key
+    temperature: 0.8 # temperature for the LLM
+    model: "gpt-4o-mini"
+    api_uri : "https://api.openai.com/v1/chat/completions" # needs to be an OpenAI API compatible endpoint
+
+  search:
+    mode: "full LLM" 
+
+    # general search parameters
+    population_size: 50 # size of the population
+    
+    sample: True # use sampling for all opearations (both selecting individual and applying operators)
+    temperature: 0.1 # temperature for the sampling
+    novel_prompts: 0 # fraction of poupulation to create ex-novo, range [0,1]
+    elites : 0.1 # fraction of population to keep from the previous, range [0,1]
+    
