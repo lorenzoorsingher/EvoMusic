@@ -69,7 +69,7 @@ if __name__ == "__main__":
         SynthUser(user + 5),
     ]  # , SynthUser(1)]
 
-    user_config = UserConfig(memory_length=50, amount=len(users))
+    user_config = UserConfig(memory_length=3, amount=len(users), minibatch=False)
 
     user_train_config = TrainConfig(
         batch_size=1,

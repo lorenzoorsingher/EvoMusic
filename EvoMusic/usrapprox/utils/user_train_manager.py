@@ -222,7 +222,8 @@ class UsersTrainManager:
         Note: The memory is offloaded to the cpu after each step of finetuning.
         """
         self.set_optimizer()
-        if epoch > 0 : wandb.log({"epoch": epoch-1}) 
+        if epoch > 0:
+            wandb.log({"Epoch": epoch - 1})
 
         losses = []
 
@@ -234,19 +235,19 @@ class UsersTrainManager:
         if user.minibatch:
             # USE MINIBATCHING
             minibatches = self.shuffle_and_create_minibatches(
-                data, target_feedback, self._train_config.batch_size
+                data, target_feedback, user._memory._stored_elements
             )
 
             for data, target_feedback in tqdm(
                 minibatches,
-                desc=f"Finetuning user {user.uuid} | {user.user_id} | ref: {user.model_reference_id}",
+                desc=f"Finetuning user {user.uuid} | {user.user_id} | ref: {user.model_reference_id}", leave=False,
             ):
                 loss = self.train_one_step(data, target_feedback, user)
                 losses.append(loss)
         else:
             for _ in tqdm(
                 range(self._train_config.epochs),
-                desc=f"Finetuning user {user.uuid} | {user.user_id} | ref: {user.model_reference_id}",
+                desc=f"Finetuning user {user.uuid} | {user.user_id} | ref: {user.model_reference_id}", leave=False,
             ):
                 loss = self.train_one_step(data, target_feedback, user)
                 losses.append(loss)
@@ -262,50 +263,59 @@ class UsersTrainManager:
 
         # Offload memory to cpu
         self.set_memory_device(user, torch.device("cpu"))
-        
-        wandb.log({"epoch": epoch})
-        wandb.log({
-            "Loss/finetune_user": torch.tensor(losses).mean().item()}
-        )
 
-    def shuffle_and_create_minibatches(memory, feedback, batch_size):
+        wandb.log({"epoch": epoch})
+        wandb.log({"Loss/finetune_user": torch.tensor(losses).mean().item()})
+
+    def shuffle_and_create_minibatches(self, memory, feedback, batch_size):
         """
-        Shuffle data along the first dimension and create minibatches.
+        Shuffle data along the song dimension and create minibatches.
         The memory and feedback tensors are assumed to already be aligned in their final concatenated shapes.
 
         Args:
-            memory (torch.Tensor): The memory tensor with shape [total_samples, n_song_embedding, ...].
-            feedback (torch.Tensor): The feedback tensor with shape [total_samples, n_song_feedbacks].
-            batch_size (int): The size of each minibatch.
+            memory (torch.Tensor): The memory tensor with shape [1, total_samples, n_song_embedding, ...].
+            feedback (torch.Tensor): The feedback tensor with shape [1, total_samples, n_song_feedbacks].
+            batch_size (int): The size of each minibatch (number of memory elements per minibatch).
 
         Returns:
             list of tuples: A list where each element is a tuple (memory_batch, feedback_batch).
         """
-        if memory.shape[0] != feedback.shape[0]:
+        if memory.shape[1] != feedback.shape[1]:
             raise ValueError(
                 "Memory and feedback must have the same number of samples along the first dimension."
             )
 
-        # Shuffle indices for the first dimension
-        num_samples = memory.shape[0]
-        indices = torch.randperm(num_samples)
+        # Extract key dimensions
+        total_samples = memory.shape[1]
+        # n_song_embedding = memory.shape[2]
+        # song_dim = memory.shape[3]
+        # n_feedbacks = feedback.shape[2]
 
-        # Copy tensors to avoid modifying the original data
-        memory = memory.copy()
-        feedback = feedback.copy()
+        # Ensure the total samples can be evenly divided by batch_size
+        if total_samples % batch_size != 0:
+            raise ValueError("Total samples must be divisible by the batch size.")
 
-        # Shuffle both tensors along the first dimension
-        shuffled_memory = memory[indices]
-        shuffled_feedback = feedback[indices]
+        # Shuffle indices for the total_samples dimension
+        indices = torch.randperm(total_samples)
 
-        # Split shuffled data into minibatches
-        memory_batches = torch.split(shuffled_memory, batch_size)
-        feedback_batches = torch.split(shuffled_feedback, batch_size)
+        # Shuffle both tensors along the relevant dimension
+        shuffled_memory = memory[:, indices, :, :]
+        shuffled_feedback = feedback[:, indices]
 
-        # Combine memory and feedback minibatches
-        minibatches = list(zip(memory_batches, feedback_batches))
+        # Split the shuffled tensors into minibatches
+        minibatches = []
+        for i in range(batch_size):
+            start_idx = i * (total_samples // batch_size)
+            end_idx = start_idx + (total_samples // batch_size)
+
+            # Extract minibatches
+            memory_batch = shuffled_memory[:, start_idx:end_idx, :, :]
+            feedback_batch = shuffled_feedback[:, start_idx:end_idx]
+
+            minibatches.append((memory_batch, feedback_batch))
 
         return minibatches
+
 
     def get_user_score(self, user: User, batch: torch.Tensor):
         """
