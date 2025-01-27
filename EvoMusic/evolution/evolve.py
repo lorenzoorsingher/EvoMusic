@@ -1,6 +1,6 @@
 from evotorch.algorithms import CMAES, PGPE, XNES, SNES, CEM
 from evotorch.algorithms.ga import Cosyne, GeneticAlgorithm, SteadyStateGA
-from evotorch.operators import OnePointCrossOver, GaussianMutation
+from evotorch.operators import OnePointCrossOver, GaussianMutation, CosynePermutation, MultiPointCrossOver, PolynomialMutation, SimulatedBinaryCrossOver, TwoPointCrossOver
 
 from EvoMusic.music_generation.generators import MusicGenerator
 from EvoMusic.evolution.searchers import PromptSearcher
@@ -69,12 +69,21 @@ class MusicEvolver:
                 params = {**default, **new_params}
                 self.optimizer = CEM(**params)
             elif config.search.mode == "GA":
+                operator_constructors = {
+                    "OnePointCrossOver": OnePointCrossOver,
+                    "GaussianMutation": GaussianMutation,
+                    "CosynePermutation": CosynePermutation,
+                    "MultiPointCrossOver": MultiPointCrossOver,
+                    "PolynomialMutation": PolynomialMutation,
+                    "SimulatedBinaryCrossOver": SimulatedBinaryCrossOver,
+                    "TwoPointCrossOver": TwoPointCrossOver,
+                }
                 default = {
                     "problem": self.problem,
                     "popsize": config.search.population_size,
                     "operators": [
-                        OnePointCrossOver(self.problem, tournament_size=4, cross_over_rate=0.5),
-                        GaussianMutation(self.problem, stdev=20, mutation_probability=1),
+                        operator_constructors[operator.name](self.problem, **operator.parameters)
+                        for operator in config.search.GA_operators
                     ],
                     "elitist": True,
                     "re_evaluate": None

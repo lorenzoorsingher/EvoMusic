@@ -210,6 +210,32 @@ class LLMPromptOperator:
 
 
 @dataclass
+class GAoperator:
+    name: str
+    """
+        name of the operator, can be one of the following:
+        - "CosynePermutation" : apply a permutation to the individuals, requires a tournament_size parameter
+        - "OnePointCrossOver" : apply a one point crossover to the individuals, requires a tournament_size parameter
+        - "MultiPointCrossOver" : apply a multi point crossover to the individuals, requires a tournament_size parameter
+        - "GaussianMutation" : apply a gaussian mutation to the individuals, requires a stdev parameter
+        - "PolynomialMutation" : apply a polynomial mutation to the individuals, requires a eta parameter 
+        - "SimulatedBinaryCrossOver" : apply a simulated binary crossover to the individuals, requires a eta parameter
+        - "TwoPointCrossOver" : apply a two point crossover to the individuals, requires a tournament_size parameter
+    """
+    parameters: dict
+    
+    def __post_init__(self):
+        assert self.name in ["CosynePermutation", "OnePointCrossOver", "MultiPointCrossOver", "GaussianMutation", "PolynomialMutation", "SimulatedBinaryCrossOver", "TwoPointCrossOver"], "Invalid operator name"
+        if self.name in ["OnePointCrossOver", "MultiPointCrossOver", "SimulatedBinaryCrossOver", "TwoPointCrossOver"]:
+            assert "tournament_size" in self.parameters, "tournament_size must be defined for this operator"
+            
+        if self.name == "GaussianMutation":
+            assert "stdev" in self.parameters, "stdev Standard deviation must be defined for this operator"
+            
+        if self.name == "SimulatedBinaryCrossOver":
+            assert "eta" in self.parameters, "eta must be defined for this operator"
+    
+@dataclass
 class searchConf:
     mode: str
     """
@@ -217,7 +243,7 @@ class searchConf:
         - "full LLM" : full LLM search, the current population with their fitness is passed to the LLM and we directly task him to generate the next population after reasoning
         - "LLM evolve" : the LLM is used to generate the next population by using base generic operators (crossover, mutation)
         - "CMAES", "PGPE", "XNES", "SNES", "CEM" : use the algorithms in the evotorch library
-        - "GA" : use the algorithms in the evotorch library
+        - "GA" : use the algorithms in the evotorch library, uses the GA operators defined in GA_operators + the parameters in evotorch for the search
 
         NOTE:   the LLM evolve mode is only available when using the prompt optimization
                 while the last modes are available when using the embeddings optimization
@@ -254,6 +280,9 @@ class searchConf:
         NOTE: the result from the previous operator is passed to the next one, thus they need to have a compatible output and input size
     """
     tournament_size: int = 2  # size of the tournament for selection
+
+    # GA parameters
+    GA_operators: list[GAoperator] = field(default_factory=list)
 
     # evotorch parameters
     evotorch: dict = field(
@@ -293,6 +322,13 @@ class searchConf:
             assert (
                 self.population_size % output == 0
             ), "Population size must be a multiple of the output size of the last operator"
+            
+        elif self.mode == "GA":
+            assert len(self.GA_operators) > 0, "At least one operator must be defined"
+            # convert list of dict to list of GAoperator
+            self.GA_operators = [
+                GAoperator(**operator) for operator in self.GA_operators
+            ]
 
 
 @dataclass

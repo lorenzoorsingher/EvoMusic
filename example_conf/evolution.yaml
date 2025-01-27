@@ -66,6 +66,15 @@ evolution:
     novel_prompts: 0.1 # fraction of poupulation to create ex-novo, range [0,1]
     elites : 0.1 # fraction of population to keep from the previous, range [0,1]
     
+    GA_operators:
+      - name: "OnePointCrossOver"
+        parameters:
+          tournament_size: 4
+          cross_over_rate: 0.5
+      - name: "GaussianMutation"
+        parameters:
+          stdev: 20
+
     # full LLM parameters
     full_LLM_prompt:
     "Generate {num_generate} music prompts for generating music based on the classification and scores of the previous prompts. 
