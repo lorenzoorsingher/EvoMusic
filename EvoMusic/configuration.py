@@ -319,10 +319,9 @@ class searchConf:
                     ), f"Operator { operator.name } input size is not compatible with the previous operator output size"
                 output = operator.output
 
-            assert (
-                self.population_size % output == 0
-            ), "Population size must be a multiple of the output size of the last operator"
-            
+            if (self.population_size-self.novel_prompts*self.population_size-self.population_size*self.elites) % output != 0:
+                print(f"Warning: population size is not divisible by the output size of the last operator")
+                
         elif self.mode == "GA":
             assert len(self.GA_operators) > 0, "At least one operator must be defined"
             # convert list of dict to list of GAoperator
