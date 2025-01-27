@@ -51,6 +51,7 @@ class EvoMusic:
             )
         elif self.config.evolution.fitness.mode == "music":
             self.user_manager = None
+            self.epoch = [0]
         else:
             raise ValueError(
                 "Invalid search mode specified. Choose between 'music', 'user', and 'dynamic'."
@@ -69,7 +70,7 @@ class EvoMusic:
             return score
         return user_fitness
         
-    def evolve(self, user_idx: int = None, n_generations: int = None):
+    def evolve(self, user_idx: int = 0, n_generations: int = None):
         """
         Evolve prompts or embeddings.
         
@@ -81,9 +82,6 @@ class EvoMusic:
             dict: Results of the evolution process.
         """
         if self.config.evolution.fitness.mode != "music":
-            # Check input validity
-            if user_idx is None:
-                user_idx = 0
             assert user_idx < self.config.user_model.user_conf.amount, "Invalid user index."
             print(f"[APP] Evolving user {user_idx}...")
             
@@ -144,7 +142,7 @@ class EvoMusic:
         return audio_paths
     
 
-    def finetune_user(self, songs, user_idx):
+    def finetune_user(self, songs, user_idx=0):
         if self.config.evolution.fitness.mode != "dynamic":
             self.epoch[user_idx] += 1
             return
@@ -157,7 +155,7 @@ class EvoMusic:
         self.epoch[user_idx] += 1
 
 
-    def generation_loop(self, user_idx: int = None, n_generations: int = None, epochs: int = None):
+    def generation_loop(self, user_idx: int = 0, n_generations: int = None, epochs: int = None):
         """
         Evolve prompts or embeddings then finetune the user, rinse and repeat.
         
@@ -172,7 +170,7 @@ class EvoMusic:
         for _ in range(epochs):
             self.single_step(user_idx, n_generations)
 
-    def single_step(self, user_idx: int = None, n_generations: int = None):
+    def single_step(self, user_idx: int = 0, n_generations: int = None):
         """
         Perform a single step of evolution and finetuning.
         
