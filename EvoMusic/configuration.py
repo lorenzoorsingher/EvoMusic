@@ -227,13 +227,13 @@ class GAoperator:
     def __post_init__(self):
         assert self.name in ["CosynePermutation", "OnePointCrossOver", "MultiPointCrossOver", "GaussianMutation", "PolynomialMutation", "SimulatedBinaryCrossOver", "TwoPointCrossOver"], "Invalid operator name"
         if self.name in ["OnePointCrossOver", "MultiPointCrossOver", "SimulatedBinaryCrossOver", "TwoPointCrossOver"]:
-            assert "tournament_size" in self.parameters, "tournament_size must be defined for this operator"
+            assert "tournament_size" in self.parameters, f"tournament_size must be defined for this operator {self.name}"
             
         if self.name == "GaussianMutation":
-            assert "stdev" in self.parameters, "stdev Standard deviation must be defined for this operator"
+            assert "stdev" in self.parameters, f"stdev Standard deviation must be defined for this operator {self.name}"
             
         if self.name == "SimulatedBinaryCrossOver":
-            assert "eta" in self.parameters, "eta must be defined for this operator"
+            assert "eta" in self.parameters, f"eta must be defined for this operator {self.name}"
     
 @dataclass
 class searchConf:
