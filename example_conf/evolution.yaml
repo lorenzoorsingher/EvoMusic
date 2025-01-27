@@ -19,7 +19,7 @@ user_model:
 
   users:
     - user_type: "synth"
-    - target_user_id: 0
+      target_user_id: 0
 
 evolution:
   exp_name: "default"
@@ -51,7 +51,6 @@ evolution:
 
   fitness:
     mode: "user" # can either be user, music or dynamic
-    target_user: 0 # static target user for mode user
     target_music: "" # path to the target music for mode music
     noise_weight: 0.5 # noise weight for the fitness function
 
