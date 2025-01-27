@@ -223,7 +223,7 @@ class UsersTrainManager:
         """
         self.set_optimizer()
         if epoch > 0:
-            wandb.log({"Epoch": epoch - 1})
+            wandb.log({"epoch": epoch - 1})
 
         losses = []
 
