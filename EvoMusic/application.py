@@ -62,7 +62,7 @@ class EvoMusic:
         user = self.user_manager.get_user(self.user_mapping[user_idx])
         def user_fitness(solution):
             solution = solution.to(self.config.user_model.device)
-            if self.config.evolution.search.mode == "user":
+            if self.config.evolution.fitness.mode == "user":
                 _,_,_, score = self.user_manager.get_user_score(user, solution)
             else:
                 _,_,_, score = self.user_manager.get_reference_score(user, solution)
