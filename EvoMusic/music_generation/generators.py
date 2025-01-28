@@ -131,7 +131,10 @@ class MusicGenerator:
                 for t in text
             ]
         elif self.config.input_type == "embeddings":
-            return [self.text_to_embed(t, max_length).squeeze(0) for t in text]
+            return [
+                self.text_to_embed(t, max_length).last_hidden_state.squeeze(0)
+                for t in text
+            ]
 
     def generate_path(self, name=None):
         """
@@ -384,22 +387,23 @@ if __name__ == "__main__":
     elif TEST == "musicgen":
         cfg = config.music_generator
         # ---------------- Test with text directly ----------------
-        musicgen_pipe = MusicGenPipeline(cfg)
-        path = musicgen_pipe.generate_music(txt, max_new_tokens=256)
-        print()
+        # musicgen_pipe = MusicGenPipeline(cfg)
+        # path = musicgen_pipe.generate_music(txt, max_new_tokens=256)
+        # print()
 
         # ---------------- Test with pre T5 ----------------
-        inputs_gen = musicgen_pipe.text_to_embeddings_before_encoder(txt)
-        cfg.exp_name = "musicgen_pre"
-        cfg.input_type = "token_embeddings"
-        musicgen_pipe = MusicGenPipeline(cfg)
-        path = musicgen_pipe.generate_music(inputs_gen, max_new_tokens=256)
+        # inputs_gen = musicgen_pipe.text_to_embeddings_before_encoder(txt)
+        # cfg.exp_name = "musicgen_pre"
+        # cfg.input_type = "token_embeddings"
+        # musicgen_pipe = MusicGenPipeline(cfg)
+        # path = musicgen_pipe.generate_music(inputs_gen, max_new_tokens=256)
 
         # ---------------- Test with embeds ----------------
         cfg.exp_name = "musicgen_embeds"
         cfg.input_type = "embeddings"
         musicgen_pipe = MusicGenPipeline(cfg)
         inputs_gen = musicgen_pipe.text_to_embed(txt, max_length=256)
+        breakpoint()
         path = musicgen_pipe.generate_music(inputs_gen, max_new_tokens=256)
 
     else:
