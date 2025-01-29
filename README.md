@@ -79,7 +79,12 @@ TODO: write a better description
 <img src="img/simulated_evomusic.png" style="display:block;float:none;margin-left:auto;margin-right:auto;width:80%"/>
 </p>
 
-TODO: write implementation
+<p align="center">
+<img src="img/aligner.png" style="display:block;float:none;margin-left:auto;margin-right:auto;width:60%"/>
+</p>
+
+This work addresses the challenge of measuring song quality, which is subjective and difficult to quantify. We propose **AlignerV2**, a model that aligns user and music embeddings in a shared latent space, allowing similarity calculations between them. Since real user embeddings are not available, synthetic user embeddings are generated from a large dataset of music interactions (Last.fm). The MERT encoder is used to extract music embeddings, leveraging all 13 hidden layers through a gating mechanism. Finally, we can calculate the similarity between user and music embeddings, allowing us to approximate a fitness function for the downstream tasks.
+AlignerV2 is trained with contrastive learning using InfoNCE loss with learnable temperature
 
 ## Installation
 
