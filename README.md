@@ -8,6 +8,8 @@
 
 EvoMusic is a project that aims to generate music using genetic algorithms. The idea is to create a population of melodies and evolve them over time using user feedback. Blah vblah
 
+TODO: write a better description
+
 ## Project Structure
 
 ```
@@ -70,6 +72,14 @@ EvoMusic is a project that aims to generate music using genetic algorithms. The 
 ├── README.md
 └── setup.py
 ```
+
+## Implementation
+
+<p align="center">
+<img src="img/simulated_evomusic.png" style="display:block;float:none;margin-left:auto;margin-right:auto;width:80%"/>
+</p>
+
+TODO: write implementation
 
 ## Installation
 
