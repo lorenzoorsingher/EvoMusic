@@ -94,6 +94,9 @@ class LivePlotter(Logger):
         
         avg_fitness = status["mean_eval"]
         worst = status["worst"].evals.item()
+        
+        median = status["median_eval"]
+        iter = status["iter"]
 
         if self.config.visualizations:
             # Update 2D Evolution Progress Plot
@@ -114,9 +117,12 @@ class LivePlotter(Logger):
             plt.draw()
 
         if self.config.wandb:
+            # wandb.log({"Iteration": iter-1})
             wandb.log({"Average Fitness": avg_fitness})
             wandb.log({"Best Fitness": best_fitness})
             wandb.log({"Worst Fitness": worst})
+            wandb.log({"Median Fitness": median})
+            wandb.log({"Iteration": iter})
             
             if self.problem.text_mode:
                 # get all the prompts

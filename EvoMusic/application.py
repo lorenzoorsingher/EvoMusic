@@ -1,6 +1,7 @@
 import os
 from diffusers.utils.testing_utils import enable_full_determinism
 from tqdm import tqdm
+import wandb
 from EvoMusic.evolution.evolve import MusicEvolver
 from EvoMusic.configuration import load_yaml_config
 from EvoMusic.music_generation.generators import EasyRiffPipeline, MusicGenPipeline
@@ -147,10 +148,22 @@ class EvoMusic:
             self.epoch[user_idx] += 1
             return
         
-        print(f"[APP] Finetuning user {user_idx}...")
+        # compute true user likeness using reference and log it
+        print(f"[APP] Computing user likeness for user {user_idx}...")
+        user = self.user_manager.get_user(self.user_mapping[user_idx])
         batch = self.evolver.problem.evaluator.embed_audios(songs).unsqueeze(0)
+        
+        _, _, _, score = self.user_manager.get_reference_score(user, batch)
+        # log max, min, mean, std of the scores
+        wandb.log({f"user: {user_idx} Validation/max score generated": score.max().item()})
+        wandb.log({f"user: {user_idx} Validation/min score generated": score.min().item()})
+        wandb.log({f"user: {user_idx} Validation/mean score generated": score.mean().item()})
+        wandb.log({f"user: {user_idx} Validation/std score generated": score.std().item()})
+        wandb.log({f"user: {user_idx} Validation/median score generated": score.median().item()})
+        
+        print(f"[APP] Finetuning user {user_idx}...")
         self.user_manager.finetune(
-            self.user_manager.get_user(self.user_mapping[user_idx]), 
+            user, 
             batch, self.epoch[user_idx])
         self.epoch[user_idx] += 1
 
