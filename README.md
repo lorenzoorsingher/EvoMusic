@@ -1,6 +1,7 @@
+# EvoMusic
+
 <p align="center">
-<span style="display:inline-block;vertical-align:middle;font-size:4em;font-weight:bold;margin-right:5%;">EvoMusic</span>
-  <img src="img/logo_cropped.jpeg" style="display:inline-block;width:20%;vertical-align:middle;"/>
+<img src="img/logo_cropped.jpeg" style="display:block;float:none;margin-left:auto;margin-right:auto;width:40%"/>
 </p>
 
 ## What is EvoMusic?
@@ -8,6 +9,15 @@
 EvoMusic is an adaptive music generation system designed to evolve music in alignment with user preferences. By analyzing user interactions, it continuously refines its understanding of musical tastes and generates personalized compositions.
 
 At its core, EvoMusic combines a music scoring mechanism, user feedback modeling, conditional music generation, and evolutionary strategies. The system follows a loop where it evolves music based on inferred preferences, generates a playlist, collects feedback, and fine-tunes its understanding of user tastes. This iterative process ensures that the music adapts dynamically to each user.
+
+More details about the project can be found in the technical report:
+
+<p align="center">
+<a href="https://github.com/lorenzoorsingher/ASA_Glovojs/blob/main/ASA_2024___Glovo_JS.pdf"><img src="img/report.png" width="250"/></a>
+</p>
+<p align="center">
+Click to download report
+</p>
 
 ## Project Structure
 
@@ -77,6 +87,12 @@ At its core, EvoMusic combines a music scoring mechanism, user feedback modeling
 <p align="center">
 <img src="img/simulated_evomusic.png" style="display:block;float:none;margin-left:auto;margin-right:auto;width:80%"/>
 </p>
+
+The EvoMusic pipeline aims to generate music tailored to user preferences using **evolutionary algorithms**. It avoids costly retraining and excessive user input by dynamically refining generated music through interactions. The system integrates four key components: a **music scorer** that evaluates alignment with user tastes, an **approximation model** that infers user preferences from feedback, a **conditional music generator**, and **evolutionary strategies** to refine music iteratively.
+
+Music evolution employs both text-based prompt optimization and direct embedding optimization. The prompt-based approach utilizes large language models (LLMs) to refine text prompts through evolutionary techniques like roulette-wheel selection, novelty injection, and elite retention. Two strategies were tested: Full LLM, which optimizes prompts via meta-prompt reasoning, and LLM Evolve, which applies genetic operators like crossover and mutation to text prompts.
+
+Embedding optimization directly manipulates the token embeddings used in the conditional music generator. Methods tested included **CMA-ES**, **SNES**, and **genetic algorithms**, all of which search the latent space for optimized solutions. Genetic algorithms showed promise in balancing exploration and exploitation, while numerical techniques struggled due to the sparsity of the embedding space.
 
 <p align="center">
 <img src="img/aligner.png" style="display:block;float:none;margin-left:auto;margin-right:auto;width:60%"/>
