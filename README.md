@@ -1,14 +1,13 @@
-# EvoMusic
-
 <p align="center">
-<img src="img/placeholder.jpg" style="display:block;float:none;margin-left:auto;margin-right:auto;width:40%"/>
+<span style="display:inline-block;vertical-align:middle;font-size:4em;font-weight:bold;margin-right:5%;">EvoMusic</span>
+  <img src="img/logo_cropped.jpeg" style="display:inline-block;width:20%;vertical-align:middle;"/>
 </p>
 
 ## What is EvoMusic?
 
-EvoMusic is a project that aims to generate music using genetic algorithms. The idea is to create a population of melodies and evolve them over time using user feedback. Blah vblah
+EvoMusic is an adaptive music generation system designed to evolve music in alignment with user preferences. By analyzing user interactions, it continuously refines its understanding of musical tastes and generates personalized compositions.
 
-TODO: write a better description
+At its core, EvoMusic combines a music scoring mechanism, user feedback modeling, conditional music generation, and evolutionary strategies. The system follows a loop where it evolves music based on inferred preferences, generates a playlist, collects feedback, and fine-tunes its understanding of user tastes. This iterative process ensures that the music adapts dynamically to each user.
 
 ## Project Structure
 

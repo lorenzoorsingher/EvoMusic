@@ -175,13 +175,12 @@ cython_debug/
 *.wav
 *.mp3
 *.json
-generated_audio/
-local/
 *.zip
 *.csv
 *.pt
 *.pth
 *.rar
+local/
 
 # wandb
 wandb/
@@ -189,6 +188,7 @@ wandb/
 # exceptions
 !usrembeds/data/splits.json
 !usrembeds/data/clean_stats.csv
+!usrembeds/data/embeddings/placeholder
 !usrembeds/exp/*
 config.yaml
 conf.yaml
