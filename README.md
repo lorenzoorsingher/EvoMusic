@@ -1,116 +1,305 @@
-# EMBEDDINGS
+# EvoMusic
 
-To generate the embeddings use embedgen.py
+<p align="center">
+<img src="img/placeholder.jpg" style="display:block;float:none;margin-left:auto;margin-right:auto;width:40%"/>
+</p>
 
-just define the path to the folder containing the audio, the stats csv file and the path to the folder where you want to save the embeddings
+## What is EvoMusic?
 
-If needed redefine the `__getitem__` method in the MusicDataset class to fit the needs of your model
+EvoMusic is a project that aims to generate music using genetic algorithms. The idea is to create a population of melodies and evolve them over time using user feedback. Blah vblah
 
-# DATA PATHS
-To run `usrembeds/main.py` or `usermebeds/test.py` you need to have data in specific paths:
-- MODEL: `usrembeds/checkpoints/your_model_checkpoint.pt`.
-- clean_stats: `usrembeds/checkpoints/data/embeddings/embeddings_full_split/clean_stats.csv` and `usrembeds/data/clean_stats.csv`, this file path hasn't been retrofitted for all usecases.
-- songs embeddings: `usrembeds/data/embeddings/embeddings_full_split/__files__.json`.
+## Project Structure
 
-# FROM MP3 TO COSSIM
-
-~~These steps are implemented in the `aligner.py` file, follow them to get from the mp3 file to the cosine similarity between the user embeddings and the music embeddings. User embeddings are stored in the model and correspond to the 1000 users in the Last.fm dataset (actually is a bit less than 1000 because not all users have listened to music avaiable to us).~~
-
-## WE HAVE NOW SWITCHED TO MERT
-
-Look at `test.py` for a quick example on how to load the alignment model
-
-<!---
-Load model and config from checkpoint
-
-```python
-LOAD = "usrembeds/checkpoints/run_20241107_201542_best.pt"
-model_state, config, _ = Aligner.load_model(LOAD)
+```
+├── EvoMusic
+│   ├── evolution
+│   │   ├── evolve.py
+│   │   ├── fitness.py
+│   │   ├── logger.py
+│   │   ├── operators.py
+│   │   ├── problem.py
+│   │   └── searchers.py
+│   ├── music_generation
+│   │   ├── generators.py
+│   │   ├── init_prompts.txt
+│   │   ├── musicgen_server.py
+│   │   ├── musicLDM_server.py
+│   │   └── riffusion_server.py
+│   ├── user_embs
+│   │   └── model.py
+│   ├── usrapprox
+│   │   ├── models
+│   │   │   └── usr_emb.py
+│   │   └── utils
+│   │       ├── dataset.py
+│   │       ├── memory.py
+│   │       ├── user_manager.py
+│   │       ├── user.py
+│   │       ├── user_train_manager.py
+│   │       └── utils.py
+│   ├── application.py
+│   └── configuration.py
+├── generated_audio
+│   └── ...
+├── img
+├── usrapprox
+│   └── ...
+├── usrembeds
+│   ├── checkpoints
+│   │   └── ...
+│   ├── data
+│   │   └── ...
+│   ├── datautils
+│   │   └── dataset.py
+│   ├── exp
+│   ├── models
+│   │   ├── __init__.py
+│   │   └── model.py
+│   ├── align.py
+│   ├── embedgen_MERT.py
+│   ├── embedgen.py
+│   ├── __init__.py
+│   ├── main.py
+│   ├── test.py
+│   └── utils.py
+├── visualizations
+│   ├── music_embedding.py
+│   └── users.py
+├── application.py
+├── evolution_pipeline.py
+├── README.md
+└── setup.py
 ```
 
-Load the Aligner model with the settings stored in the config
+## Installation
 
-```python
-EMB_SIZE = config["emb_size"]
-MUSIC_EMB_SIZE = config["prj_size"]
-TEMP = config["temp"]
-LT = config["learnable_temp"]
-PRJ = config["prj"]
-NUSERS = config["nusers"]
+To install the required packages, run the following commands:
 
-# load aligner model
-align_model = Aligner(
-    n_users=NUSERS,
-    emb_size=EMB_SIZE,
-    prj_size=MUSIC_EMB_SIZE,
-    prj_type=PRJ,
-    lt=LT,
-    temp=TEMP,
-).to(DEVICE)
+Create and activate conda environment with Python 3.10:
 
-align_model.load_state_dict(model_state)
-align_model.eval()
+```bash
+conda create -n evomusic python=3.10
+conda activate evomusic
 ```
 
-Load the music encoder, in this case we are using OpenL3, we might swtich to MERT later on
+Install the required packages via `setup.py`:
 
-```python
-# audio extraction setting
-HOP_SIZE = 0.1  # hop size defined in the paper
-TARGET_SR = torchopenl3.core.TARGET_SR
-AUDIO_LEN = 3
-
-# load embedder model
-embed_model = torchopenl3.core.load_audio_embedding_model(
-    input_repr="mel256",
-    content_type="music",
-    embedding_size=MUSIC_EMB_SIZE,
-)
+```bash
+pip install -e .
 ```
 
-Load the mp3 file from disk
+Ensure the needed files are in the correct directories:
 
-```python
-track_path = "/your/music/folder/trap.mp3"
-audio = load_wav(track_path, TARGET_SR, AUDIO_LEN)
+- _AlignerV2_best_model.pt_ checkpoint in `usrembeds/checkpoints/`
+- _embeddings_full_split/_ in `usrembeds/data/embeddings/`
+
+## Usage
+
+To run the application you need to provide to `evolution_pipeline.py` a valid configuration file. The configuration file is in YAML format and contains the field that describes the parameters of the pipeline. An example of a configuration file is available under the directory `example_conf/`.
+
+```bash
+python evolution_pipeline.py --config_path example_conf/config.yaml
 ```
 
-Extract the embeddings from the audio and average over all frames
+### Configuration
 
-```python
+In the configuration file it's possible to specify what music generation model to use in the pipeline, EvoMusic supports two different models: **Riffusion** and **MusicGen**, both can be configured and the parameter `music_model` dictates which one to use.
 
-# extract audio embeddings from wav
-emb, ts = torchopenl3.get_audio_embedding(
-    audio,
-    TARGET_SR,
-    model=embed_model,
-    hop_size=HOP_SIZE,
-    embedding_size=MUSIC_EMB_SIZE,
-)
+```yaml
+music_generator:
+  model: "facebook/musicgen-small"
+  input_type: "text"
+  output_dir: "generated_audio"
+  name: "musicgen"
 
-mean_emb = emb.mean(axis=1)
+riffusion_pipeline:
+  input_type: "text"
+  output_dir: "generated_audio"
+  name: "riffusion"
+  inference_steps: 50
+
+music_model: "musicgen"
 ```
 
-Reshape the user indexes tensor and the music embeddings tensor to the right shapes
+- `input_type` specifies the type of input that the model expects, it can be either **text**, **embedding** or **token_embdedding**.
+- `output_dir` specifies the directory where the generated audio files will be saved.
 
-```python
-# [1]
-# [1, 1, EMB]
-usr_idx = torch.tensor([34], dtype=torch.int32).to(DEVICE)
-batched_emb = mean_emb.unsqueeze(0)
+In `user_model` it's possible to configure the user embedding model, the user configuration and the training configuration.
+
+```yaml
+user_model:
+  aligner:
+    abs_file_path: "usrembeds/checkpoints/AlignerV2_best_model.pt"
+  user_conf:
+    memory_length: 50
+    amount: 1
+    init: "rmean" # mean rand rmean
+  train_conf:
+    lr: 0.001
+    epochs: 5
+
+  best_solutions: 10
+
+  users:
+    - user_type: "synth"
+      target_user_id: 0
 ```
 
-Run the model with the user indexes and the music embeddings, you will
-get the user embeddings and the projected music embeddings
+- `aligner` specifies the path to the alignment model checkpoint.
+- `user_conf` specifies the configuration of the user embedding model, it's possible to specify the `memory length` (the number of previous generations to consider in the approximated user training), the `amount` (the number of users to approximate)and the `init` method which specifies how to initialize the user embedding. It can be either **mean** (initialize the user embedding with the average of all the synthesized users), **rand** (initialize the user embedding with random values) or **rmean** (same as mean but with random noise).
+- `train_conf` specifies the training configuration of the user embedding model, it's possible to specify the `learning rate` and the number of `epochs`.
+- `best_solutions` sets the number of best solutions from each generation to be user for the user embedding approximation.
+- `users` specifies the users to approximate, it's possible to specify the `user_type` which can be either **synth** or **real** and the `target_user_id` which specifies id of the user to approximate among the 987 available.
 
-```python
-# [B, EMB]
-# [B, N, EMB]
-urs_x, embs, _ = align_model(usr_idx, batched_emb)
+Under the evolution section of the configuration file we can specify the parameters of the genetic algorithm as well as the logging and LLM options.
+
+```yaml
+evolution:
+  exp_name: "base"
+
+  generations: 5
+
+  max_seq_len: 25
+  duration: 1
+  best_duration: 3
+
+  device: "cpu"
+
+  initialization: "file"
+  init_file: "EvoMusic/music_generation/init_prompts.txt"
+
+  logger:
+    wandb: True
+    project: "MusicEvo"
+
+    wandb_token: "WANDB_TOKEN"
+
+    visualizations: False
+
+  LLM:
+    api_key: "API_KEY"
+    temperature: 0.7
+    model: "gpt-4o-mini"
+    api_uri: "https://api.openai.com/v1/chat/completions" # needs to be an OpenAI API compatible endpoint
 ```
 
-`N` is the number of songs for every batch, in this case we are only running one batch with one song
---->
+- `exp_name` specifies the name of the experiment.
+- `generations` specifies the number of generations that the genetic algorithm will run **for each evolve step**.
+- `max_seq_len` specifies the maximum length in tokens of the generated sequence (including 2 tokens for the start and end tokens).
+- `duration` specifies the duration of the generated audio files in seconds.
+- `best_duration` specifies the duration in seconds of the best solution for each generation.
+- `device` specifies the device to use for computation for the evolutionary strategy.
+- `initialization` specifies the initialization method for the population, it can be either **LLM** or **file**. If the initialization is set to **file** the `init_file` parameter specifies the path to the file containing the initial prompts, otherwise the **LLM** section specifies the parameters for the LLM initialization, any OpenAI API compatible endpoint can be used.
+- `logger` specifies the logging options for the pipeline, it's possible to log the results to WandB and to save the visualizations of the population, it's recommended to set **wandb** to **True** and to provide a valid WandB token.
 
-FOR REPRODUCIBILITY IN CUDA: 
-$env:CUBLAS_WORKSPACE_CONFIG=":4096:8"
+```yaml
+fitness:
+  mode: "user" # can either be user, music or dynamic
+  target_music: "" # path to the target music for mode music
+  noise_weight: 0.5 # noise weight for the fitness function
+```
+
+- `mode` specifies the mode of the fitness function, it can be either **user**, **music** or **dynamic**. If the mode is set to **user** the fitness function will use as target the user embedding specified in the `user_model` section, if the mode is set to **music** the fitness function will use as target the music specified in the `target_music` field, if the mode is set to **dynamic** the fitness function will use the dynamically approximated user embedding.
+- `noise_weight` specifies the weight of the penalty for the noise and artifacts in the generated audio, it's not recommended using it with **LLM** and **LLM evolve** modes.
+
+Under the `search` section you can specify the parameters of the evolutionary strategy, the available modes are **LLM evolve**, **full LLM**, **GA**, **CMAES** and **SNES**.
+
+```yaml
+search:
+  mode: "LLM evolve"
+
+  # general search parameters
+  population_size: 100
+
+  sample: True
+  temperature: 0.1 #(note: the original values are [-1,1] so we advise lower values)
+  novel_prompts: 0.1
+  elites: 0.1
+```
+
+- `mode` specifies the mode of the evolutionary strategy, it can be either:
+  - **full LLM** which uses the LLM to generate the whole population and performs the evolutions and crossover, the prompt can be set via the _full_LLM_prompt_ field.
+  - **LLM evolve** which uses the LLM to generate the initial population and then evolves it using LLM-based operators that will be defined in the _LLM_genetic_operators_ section.
+  - **GA** which uses the genetic algorithm to evolve the population.
+  - **CMAES** which uses the CMAES algorithm to evolve the population.
+  - **SNES** which uses the SNES algorithm to evolve the population.
+
+GA, CMAES and SNES use the **evotorch** library implementation of the algorithms.
+
+- `population_size` specifies the size of the population.
+- `sample` specifies whether to use sampling for all operations. _[LLM modes only]_
+- `temperature` specifies the temperature to use for the sampling. _[LLM modes only]_
+- `novel_prompts` specifies the fraction of the population to create ex-novo. _[LLM modes only]_
+- `elites` specifies the fraction of the population to keep from the previous generation.
+
+In order to be interpreted by EvoMusic, the prompt for the **full LLM** mode must be formatted as follows:
+
+```yaml
+    full_LLM_prompt:
+    "Generate {num_generate} music prompts ...
+
+Here is the current population with their similarity scores and ranking for the current generation:
+{ranking}
+
+after the reasonin, generate only the next generation of prompts with a population of {num_generate} prompts."
+```
+
+More detailed instructions can be added in the prompt as long as it follows the same general structure as the example above.
+
+For what concerns the **LLM evolve** mode, the genetic operators can be defined in the configuration file under the `LLM_genetic_operators` field. The operators are applied to the whole population one by one sequentially, and you can create operators that apply multiple operations at the same time by describing what you want the LLM to do. Do not use anywhere the <propt> </prompt> tags, as they are used to extract the final output from the LLM
+
+```yaml
+# LLM evolve parameters
+tournament_size: 5 # size of the tournament for selection
+LLM_genetic_operators:
+  # genetic operators to use when using the LLM evolve mode
+
+  - name: "cross over"
+    prompt: "take the two prompts provided and cross them over by mixing components of both {prompts}"
+    input: 2 # number of parents
+    output: 1 # number of children
+    probability: 0.5 # the probability of applying the operator
+  - name: "change genere"
+    prompt: "take the prompt and change the genre of the music used {prompts}"
+    input: 1 # number of parents
+    output: 1 # number of children
+    probability: 0.5
+  - name: "random mutation"
+    input: 1 # number of parents
+    output: 1 # number of children
+    prompt: "take the prompt and mutate it, you can choose to mutate any of the words in the prompt {prompts}"
+    probability: 0.5
+```
+
+- `name` specifies the name of the operator.
+- `prompt` specifies the prompt to use for the operator, so the operation that the LLM should perform.
+- `input` specifies the number of parents that the operator needs.
+- `output` specifies the number of children that the operator will generate.
+- `probability` specifies the probability of applying the operator.
+
+When using GA, CMAES or SNES the parameters can be defined under the `evotorch`field, any parameter available in the evotorch library can be specified here.
+
+```yaml
+evotorch: # additional parameters for the search algorithm when using evotorch's algorithms
+  elitist: True
+
+GA_operators:
+  - name: "OnePointCrossOver"
+    parameters:
+      tournament_size: 4
+      cross_over_rate: 0.5
+  - name: "GaussianMutation"
+    parameters:
+      stdev: 20
+```
+
+- `elitist` specifies whether to use elitism in the algorithm, if set to false it will override the `elites` parameter in the `search` section.
+- `GA_operators` specifies the genetic operators to use when using the GA algorithm, the available operators are **OnePointCrossOver**, **GaussianMutation**, **CosynePermutation**, **MultiPointCrossOver**, **PolynomialMutation**, **SimulatedBinaryCrossOver** and **TwoPointCrossOver**. Check the documentation of the `evotorch` library for more information on the parameters of the operators.
+
+## Authors
+
+- [@DavidC001](https://github.com/DavidC001)
+- [@lorenzoorsingher](https://github.com/lorenzoorsingher)
+- [@sa1g](https://github.com/sa1g)
+- [@blauer4](https://github.com/blauer4)
+- [GitHub repo](https://github.com/lorenzoorsingher/EvoMusic)

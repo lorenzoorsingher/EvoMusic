@@ -1,0 +1,80 @@
+epochs: 5
+
+music_generator:
+  model: "facebook/musicgen-small"
+  input_type: "token_embeddings" # input type for the music generator, can be either text, token_embeddings or embeddings
+  output_dir: "generated_audio"
+  name: "musicgen"
+
+music_model: "musicgen"
+
+user_model:
+  aligner:
+    abs_file_path: "usrembeds/checkpoints/AlignerV2_best_model.pt"
+  user_conf:
+    memory_length: 50
+    amount: 1
+    init: "rmean" # mean rand rmean
+  train_conf:
+    lr: 0.001
+    epochs: 5
+  
+  best_solutions: 10
+
+  users:
+    - user_type: "synth"
+      target_user_id: 0
+
+
+evolution:
+  exp_name: "base"
+
+  generations: 5 # number of generations to run the evolution for
+
+  max_seq_len: 25 # maximum number of tokens in the prompt when using mode token or embeddings
+  duration: 1 # duration of the generated music in seconds
+  best_duration: 3 # duration of the best music in seconds
+
+  device: "cpu"
+
+  initialization: "file" # can either be LLM or file
+  init_file: "EvoMusic/music_generation/init_prompts.txt"
+
+  logger:
+    wandb: True # whether to use wandb for logging
+    project: "MusicEvo" # wandb project name
+
+    wandb_token: "" # wandb token
+
+    visualizations: False # whether to use visualizations
+
+  LLM: 
+    api_key: ""
+    temperature: 0.7
+    model: "gpt-4o-mini"
+    api_uri : "https://api.openai.com/v1/chat/completions" # needs to be an OpenAI API compatible endpoint
+
+  fitness:
+    mode: "dynamic" # can either be user, music or dynamic
+    target_music: "generated_audio/BestPop1_musicgen_0.wav" # path to the target music for mode music
+
+  search:
+    mode: "GA" # available modes are full LLM, LLM evolve, TODO CMAES, PGPE, TODO XNES, SNES, CEM, GA
+    
+    # general search parameters
+    population_size: 25 # size of the population
+    
+    elites : 0.1 # fraction of population to keep from the previous, range [0,1]
+    
+    # evotorch parameters
+    evotorch: # additional parameters for the search algorithm when using evotorch's algorithms
+      elitist: True
+
+    GA_operators:
+      - name: "OnePointCrossOver"
+        parameters:
+          tournament_size: 4
+          cross_over_rate: 0.5
+      - name: "GaussianMutation"
+        parameters:
+          stdev: 20
