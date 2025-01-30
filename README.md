@@ -120,8 +120,8 @@ pip install -e .
 
 Ensure the needed files are in the correct directories:
 
-- _AlignerV2_best_model.pt_ checkpoint in `usrembeds/checkpoints/`
-- _embeddings_full_split/_ in `usrembeds/data/embeddings/`
+- [_AlignerV2_best_model.pt_](https://drive.google.com/file/d/16cFjul9jPlEb7oPlQtwNmjcB7cZlm6Ht/view?usp=sharing) in `usrembeds/checkpoints/` checkpoint
+- [_embeddings_full_split_](https://drive.google.com/file/d/eeeh/view?usp=sharing) in `usrembeds/data/embeddings/`
 
 ## Usage
 
