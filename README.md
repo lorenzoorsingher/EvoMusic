@@ -13,7 +13,7 @@ At its core, EvoMusic combines a music scoring mechanism, user feedback modeling
 More details about the project can be found in the technical report:
 
 <p align="center">
-<a href="https://github.com/lorenzoorsingher/ASA_Glovojs/blob/main/ASA_2024___Glovo_JS.pdf"><img src="img/report.png" width="250"/></a>
+<a href="https://github.com/lorenzoorsingher/EvoMusic/blob/main/EvoMusic_report.pdf"><img src="img/report.png" width="250"/></a>
 </p>
 <p align="center">
 Click to download report
@@ -103,7 +103,7 @@ AlignerV2 is trained with contrastive learning using InfoNCE loss with learnable
 
 ## Installation
 
-To install the required packages, run the following commands:
+To install the required pa[c](https://github.com/lorenzoorsingher/EvoMusic/blob/main/EvoMusic_report.pdf)kages, run the following commands:
 
 Create and activate conda environment with Python 3.10:
 
