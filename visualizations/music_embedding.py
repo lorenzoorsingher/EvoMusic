@@ -19,7 +19,14 @@ from EvoMusic.user_embs.model import AlignerV2
 from EvoMusic.evolution.fitness import MusicScorer
 
 
-def visualize_scatter(embeds, labels, title="Scatter Plot", label_set=None, projection='3d', color_by='genre'):
+def visualize_scatter(
+    embeds,
+    labels,
+    title="Scatter Plot",
+    label_set=None,
+    projection="3d",
+    color_by="genre",
+):
     """
     Utility to plot a scatter plot (2D or 3D) of the given embeddings.
 
@@ -31,42 +38,60 @@ def visualize_scatter(embeds, labels, title="Scatter Plot", label_set=None, proj
     - projection: '3d' or '2d'
     - color_by: 'genre' or 'density'
     """
-    if label_set is None and color_by == 'genre':
+    if label_set is None and color_by == "genre":
         label_set = sorted(list(set(labels)))
 
     fig = plt.figure(figsize=(10, 8))
-    if projection == '3d':
-        ax = fig.add_subplot(111, projection='3d')
+    if projection == "3d":
+        ax = fig.add_subplot(111, projection="3d")
     else:
         ax = fig.add_subplot(111)
     ax.set_title(title, fontsize=15)
 
-    if color_by == 'genre':
+    if color_by == "genre":
         # Assign each unique label a consistent color using a qualitative colormap
         label_to_color = {}
-        cmap = plt.get_cmap('tab10', len(label_set))  # Use 'tab10' for better distinction
+        cmap = plt.get_cmap(
+            "tab20", len(label_set)
+        )  # Use 'tab10' for better distinction
         for i, lab in enumerate(label_set):
             label_to_color[lab] = cmap(i)
 
         colors = [label_to_color[lab] for lab in labels]
         if projection == "3d":
             scatter = ax.scatter(
-                embeds[:, 0], embeds[:, 1], embeds[:, 2],
+                embeds[:, 0],
+                embeds[:, 1],
+                embeds[:, 2],
                 c=colors,
-                s=50, alpha=0.7, edgecolors='w', linewidth=0.5
+                s=50,
+                alpha=0.7,
+                edgecolors="w",
+                linewidth=0.5,
             )
         else:
             scatter = ax.scatter(
-                embeds[:, 0], embeds[:, 1],
+                embeds[:, 0],
+                embeds[:, 1],
                 c=colors,
-                s=50, alpha=0.7, edgecolors='w', linewidth=0.5
+                s=50,
+                alpha=0.7,
+                edgecolors="w",
+                linewidth=0.5,
             )
 
         # Create legend with distinct markers for centroids
         handles = [
-            plt.Line2D([0], [0], marker='o', color='w', 
-                       label=lab, markerfacecolor=label_to_color[lab],
-                       markersize=10, markeredgecolor='k')
+            plt.Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="w",
+                label=lab,
+                markerfacecolor=label_to_color[lab],
+                markersize=10,
+                markeredgecolor="k",
+            )
             for lab in label_set
         ]
         plt.legend(
@@ -75,11 +100,11 @@ def visualize_scatter(embeds, labels, title="Scatter Plot", label_set=None, proj
             loc="best",
             fontsize=10,
             bbox_to_anchor=(1.05, 1),
-            borderaxespad=0.
+            borderaxespad=0.0,
         )
-    elif color_by == 'density':
+    elif color_by == "density":
         # Compute density
-        if projection == '3d':
+        if projection == "3d":
             density = compute_density(embeds)
         else:
             density = compute_density(embeds[:, :2])
@@ -91,26 +116,33 @@ def visualize_scatter(embeds, labels, title="Scatter Plot", label_set=None, proj
         cmap = plt.cm.viridis
         colors = cmap(density_normalized)
 
-        if projection == '3d':
+        if projection == "3d":
             scatter = ax.scatter(
-                embeds[:, 0], embeds[:, 1], embeds[:, 2],
+                embeds[:, 0],
+                embeds[:, 1],
+                embeds[:, 2],
                 c=density_normalized,
                 cmap=cmap,
-                s=50, alpha=0.7, edgecolors='w'
+                s=50,
+                alpha=0.7,
+                edgecolors="w",
             )
             cb = plt.colorbar(scatter, ax=ax, shrink=0.5, aspect=10)
-            cb.set_label('Density')
+            cb.set_label("Density")
         else:
             scatter = ax.scatter(
-                embeds[:, 0], embeds[:, 1],
+                embeds[:, 0],
+                embeds[:, 1],
                 c=density_normalized,
                 cmap=cmap,
-                s=50, alpha=0.7, edgecolors='w'
+                s=50,
+                alpha=0.7,
+                edgecolors="w",
             )
             cb = plt.colorbar(scatter, ax=ax)
-            cb.set_label('Density')
+            cb.set_label("Density")
 
-    if projection == '3d':
+    if projection == "3d":
         ax.set_xlabel("X", fontsize=12)
         ax.set_ylabel("Y", fontsize=12)
         ax.set_zlabel("Z", fontsize=12)
@@ -142,9 +174,9 @@ def compute_density(embeds, bandwidth=1.0):
     return density
 
 
-def visualize_class_distribution_gmm(embeds_2d, labels, class_list=None,
-                                     n_components=1, grid_size=200,
-                                     title_prefix=""):
+def visualize_class_distribution_gmm(
+    embeds_2d, labels, class_list=None, n_components=1, grid_size=200, title_prefix=""
+):
     """
     Show a side-by-side 2D visualization:
       (A) Scatter plot of points with class centroids
@@ -176,7 +208,9 @@ def visualize_class_distribution_gmm(embeds_2d, labels, class_list=None,
             print(f"Warning: No points found for class '{c}'. Skipping GMM fitting.")
             gmms.append(None)
             continue
-        gmm_c = GaussianMixture(n_components=n_components, covariance_type='full', random_state=42)
+        gmm_c = GaussianMixture(
+            n_components=n_components, covariance_type="full", random_state=42
+        )
         gmm_c.fit(points_c)
         gmms.append(gmm_c)
 
@@ -193,7 +227,7 @@ def visualize_class_distribution_gmm(embeds_2d, labels, class_list=None,
     centroids = np.array(centroids)  # shape (#classes, 2)
 
     # Build a color palette for classes using a qualitative colormap
-    cmap = plt.get_cmap('tab10', len(class_list))  # 'tab10' has 10 distinct colors
+    cmap = plt.get_cmap("tab10", len(class_list))  # 'tab10' has 10 distinct colors
     class_colors = [cmap(i) for i in range(len(class_list))]
 
     # Create a grid covering the embedding range
@@ -253,14 +287,28 @@ def visualize_class_distribution_gmm(embeds_2d, labels, class_list=None,
         points_c = embeds_2d[numeric_labels == cidx]
         if len(points_c) == 0:
             continue
-        ax0.scatter(points_c[:, 0], points_c[:, 1],
-                    color=class_colors[cidx],
-                    label=str(c), alpha=0.6, edgecolors='k', s=40)
+        ax0.scatter(
+            points_c[:, 0],
+            points_c[:, 1],
+            color=class_colors[cidx],
+            label=str(c),
+            alpha=0.6,
+            edgecolors="k",
+            s=40,
+        )
 
     # Plot centroids with distinct markers
     valid_centroids = ~np.isnan(centroids).any(axis=1)
-    ax0.scatter(centroids[valid_centroids, 0], centroids[valid_centroids, 1],
-                s=200, c='black', marker='X', label='Centroids', edgecolors='w', linewidth=2)
+    ax0.scatter(
+        centroids[valid_centroids, 0],
+        centroids[valid_centroids, 1],
+        s=200,
+        c="black",
+        marker="X",
+        label="Centroids",
+        edgecolors="w",
+        linewidth=2,
+    )
 
     ax0.set_xlabel("X", fontsize=14)
     ax0.set_ylabel("Y", fontsize=14)
@@ -273,13 +321,14 @@ def visualize_class_distribution_gmm(embeds_2d, labels, class_list=None,
     ax1.set_title("Fractional Density Map", fontsize=16)
     ax1.imshow(
         blended_colors,
-        origin='lower',  # so that Y=0 is at the bottom
+        origin="lower",  # so that Y=0 is at the bottom
         extent=(x_min, x_max, y_min, y_max),
-        aspect='auto'
+        aspect="auto",
     )
     # Overlay original points as semi-transparent white
-    ax1.scatter(embeds_2d[:, 0], embeds_2d[:, 1],
-                color='white', edgecolors='k', s=20, alpha=0.3)
+    ax1.scatter(
+        embeds_2d[:, 0], embeds_2d[:, 1], color="white", edgecolors="k", s=20, alpha=0.3
+    )
     ax1.set_xlabel("X", fontsize=14)
     ax1.set_ylabel("Y", fontsize=14)
 
@@ -293,7 +342,8 @@ def main(
     output_dir="generated_audio",
     device="cuda",
     max_genres=None,
-    max_prompts_per_genre=None
+    max_prompts_per_genre=None,
+    visualize_t5=False,
 ):
     """
     1) Loads config and JSON prompts.
@@ -331,13 +381,66 @@ def main(
         gen = EasyRiffPipeline(generator_config)
 
     # -----------------------
+    # Generate token embeddings for representation
+    # -----------------------
+    if config.music_model == "musicgen" and visualize_t5:
+        # open music_generation_prompts_by_genre.json
+        with open(json_file, "r") as f:
+            prompts_dict = json.load(f)
+        all_embeds = []
+        all_genres = []
+        genres = list(prompts_dict.keys())
+        if max_genres is not None:
+            genres = genres[:max_genres]
+            print(f"Limiting to first {max_genres} genres.")
+
+        for genre in genres:
+            items = prompts_dict[genre]
+            if max_prompts_per_genre is not None:
+                items = items[:max_prompts_per_genre]
+                print(
+                    f"Limiting genre '{genre}' to first {max_prompts_per_genre} prompts."
+                )
+            for entry in items:
+                p = entry["prompt"]
+                all_embeds.append(
+                    gen.text_to_embeddings_before_encoder(p, max_length=20)
+                    .flatten()
+                    .clone()
+                    .detach()
+                    .numpy()
+                )
+                all_genres.append(genre)
+
+        tsne_2d = TSNE(
+            n_components=2,
+            random_state=234,
+            perplexity=50,
+            n_jobs=-1,
+            n_iter=1000,
+            metric="cosine",
+        )
+
+        t5_tsne = tsne_2d.fit_transform(np.array(all_embeds))
+        visualize_scatter(
+            t5_tsne,
+            all_genres,
+            title="Token embeddings (t-SNE 2D)",
+            projection="2d",
+            color_by="genre",
+        )
+        return
+
+    # -----------------------
     # Optionally load AlignerV2
     # (Only if you want "post-aligner" embeddings)
     # -----------------------
     aligner_path = "usrembeds/checkpoints/AlignerV2_best_model.pt"
     if os.path.exists(aligner_path):
         try:
-            state_dict, aligner_conf, _ = AlignerV2.load_model(aligner_path, device=device)
+            state_dict, aligner_conf, _ = AlignerV2.load_model(
+                aligner_path, device=device
+            )
             model_conf = {
                 "n_users": aligner_conf["nusers"],
                 "emb_size": aligner_conf["emb_size"],
@@ -409,13 +512,17 @@ def main(
     # Generate audio & collect paths
     # -----------------------
     print("Generating audio from prompts (this may be slow)...")
-    for (genre, prompt) in tqdm(all_prompts, desc="Generating Music"):
+    for genre, prompt in tqdm(all_prompts, desc="Generating Music"):
         try:
-            audio_path = gen.generate_music(prompt, duration=2)  # Adjust duration as needed
+            audio_path = gen.generate_music(
+                prompt, duration=2
+            )  # Adjust duration as needed
             all_audio_paths.append(audio_path)
             all_genres.append(genre)
         except Exception as e:
-            print(f"Failed to generate music for prompt '{prompt}' in genre '{genre}': {e}")
+            print(
+                f"Failed to generate music for prompt '{prompt}' in genre '{genre}': {e}"
+            )
 
     print("Done generating. Now embedding them with MERT...")
 
@@ -478,7 +585,7 @@ def main(
     # ---- t-SNE on MERT (pre-aligner) ----
     try:
         print("Applying t-SNE on MERT embeddings (3D)...")
-        tsne_3d_pre = TSNE(n_components=3, perplexity=15, init='pca', random_state=42)
+        tsne_3d_pre = TSNE(n_components=3, perplexity=15, init="pca", random_state=42)
         mert_tsne_3d = tsne_3d_pre.fit_transform(mert_embs_flat)
         print("t-SNE 3D on MERT embeddings completed.")
     except Exception as e:
@@ -487,7 +594,7 @@ def main(
 
     try:
         print("Applying t-SNE on MERT embeddings (2D)...")
-        tsne_2d_pre = TSNE(n_components=2, perplexity=15, init='pca', random_state=42)
+        tsne_2d_pre = TSNE(n_components=2, perplexity=15, init="pca", random_state=42)
         mert_tsne_2d = tsne_2d_pre.fit_transform(mert_embs_flat)
         print("t-SNE 2D on MERT embeddings completed.")
     except Exception as e:
@@ -519,34 +626,58 @@ def main(
     # Genre-based 3D t-SNE
     if mert_tsne_3d is not None:
         visualize_scatter(
-            mert_tsne_3d, all_genres, title="MERT Pre-Aligner (t-SNE 3D)", projection='3d', color_by='genre'
+            mert_tsne_3d,
+            all_genres,
+            title="MERT Pre-Aligner (t-SNE 3D)",
+            projection="3d",
+            color_by="genre",
         )
     else:
-        print("Skipping t-SNE 3D visualization for MERT embeddings due to previous errors.")
+        print(
+            "Skipping t-SNE 3D visualization for MERT embeddings due to previous errors."
+        )
 
     # Genre-based 2D t-SNE
     if mert_tsne_2d is not None:
         visualize_scatter(
-            mert_tsne_2d, all_genres, title="MERT Pre-Aligner (t-SNE 2D)", projection='2d', color_by='genre'
+            mert_tsne_2d,
+            all_genres,
+            title="MERT Pre-Aligner (t-SNE 2D)",
+            projection="2d",
+            color_by="genre",
         )
     else:
-        print("Skipping t-SNE 2D visualization for MERT embeddings due to previous errors.")
+        print(
+            "Skipping t-SNE 2D visualization for MERT embeddings due to previous errors."
+        )
 
     # Genre-based 3D UMAP
     if mert_umap_3d is not None:
         visualize_scatter(
-            mert_umap_3d, all_genres, title="MERT Pre-Aligner (UMAP 3D)", projection='3d', color_by='genre'
+            mert_umap_3d,
+            all_genres,
+            title="MERT Pre-Aligner (UMAP 3D)",
+            projection="3d",
+            color_by="genre",
         )
     else:
-        print("Skipping UMAP 3D visualization for MERT embeddings due to previous errors.")
+        print(
+            "Skipping UMAP 3D visualization for MERT embeddings due to previous errors."
+        )
 
     # Genre-based 2D UMAP
     if mert_umap_2d is not None:
         visualize_scatter(
-            mert_umap_2d, all_genres, title="MERT Pre-Aligner (UMAP 2D)", projection='2d', color_by='genre'
+            mert_umap_2d,
+            all_genres,
+            title="MERT Pre-Aligner (UMAP 2D)",
+            projection="2d",
+            color_by="genre",
         )
     else:
-        print("Skipping UMAP 2D visualization for MERT embeddings due to previous errors.")
+        print(
+            "Skipping UMAP 2D visualization for MERT embeddings due to previous errors."
+        )
 
     # -----------------------
     # If we have Post-Aligner embeddings, do the same
@@ -554,7 +685,9 @@ def main(
     if post_aligner_embs is not None:
         try:
             print("Applying t-SNE on Post-Aligner embeddings (3D)...")
-            tsne_3d_post = TSNE(n_components=3, perplexity=15, init='pca', random_state=42)
+            tsne_3d_post = TSNE(
+                n_components=3, perplexity=15, init="pca", random_state=42
+            )
             aligner_tsne_3d = tsne_3d_post.fit_transform(post_aligner_embs)
             print("t-SNE 3D on Post-Aligner embeddings completed.")
         except Exception as e:
@@ -563,7 +696,9 @@ def main(
 
         try:
             print("Applying t-SNE on Post-Aligner embeddings (2D)...")
-            tsne_2d_post = TSNE(n_components=2, perplexity=15, init='pca', random_state=42)
+            tsne_2d_post = TSNE(
+                n_components=2, perplexity=15, init="pca", random_state=42
+            )
             aligner_tsne_2d = tsne_2d_post.fit_transform(post_aligner_embs)
             print("t-SNE 2D on Post-Aligner embeddings completed.")
         except Exception as e:
@@ -592,66 +727,94 @@ def main(
     # Visualize Post-Aligner Embeddings
     # -----------------------
     # Genre-based 3D t-SNE
-    if 'aligner_tsne_3d' in locals() and aligner_tsne_3d is not None:
+    if "aligner_tsne_3d" in locals() and aligner_tsne_3d is not None:
         visualize_scatter(
-            aligner_tsne_3d, all_genres, title="Post-Aligner (t-SNE 3D)", projection='3d', color_by='genre'
+            aligner_tsne_3d,
+            all_genres,
+            title="Post-Aligner (t-SNE 3D)",
+            projection="3d",
+            color_by="genre",
         )
     else:
-        print("Skipping t-SNE 3D visualization for Post-Aligner embeddings due to previous errors.")
+        print(
+            "Skipping t-SNE 3D visualization for Post-Aligner embeddings due to previous errors."
+        )
     # Genre-based 2D t-SNE
-    if 'aligner_tsne_2d' in locals() and aligner_tsne_2d is not None:
+    if "aligner_tsne_2d" in locals() and aligner_tsne_2d is not None:
         visualize_scatter(
-            aligner_tsne_2d, all_genres, title="Post-Aligner (t-SNE 2D)", projection='2d', color_by='genre'
+            aligner_tsne_2d,
+            all_genres,
+            title="Post-Aligner (t-SNE 2D)",
+            projection="2d",
+            color_by="genre",
         )
     else:
-        print("Skipping t-SNE 2D visualization for Post-Aligner embeddings due to previous errors.")
+        print(
+            "Skipping t-SNE 2D visualization for Post-Aligner embeddings due to previous errors."
+        )
     # Genre-based 3D UMAP
-    if 'aligner_umap_3d' in locals() and aligner_umap_3d is not None:
+    if "aligner_umap_3d" in locals() and aligner_umap_3d is not None:
         visualize_scatter(
-            aligner_umap_3d, all_genres, title="Post-Aligner (UMAP 3D)", projection='3d', color_by='genre'
+            aligner_umap_3d,
+            all_genres,
+            title="Post-Aligner (UMAP 3D)",
+            projection="3d",
+            color_by="genre",
         )
     else:
-        print("Skipping UMAP 3D visualization for Post-Aligner embeddings due to previous errors.")
+        print(
+            "Skipping UMAP 3D visualization for Post-Aligner embeddings due to previous errors."
+        )
     # Genre-based 2D UMAP
-    if 'aligner_umap_2d' in locals() and aligner_umap_2d is not None:
+    if "aligner_umap_2d" in locals() and aligner_umap_2d is not None:
         visualize_scatter(
-            aligner_umap_2d, all_genres, title="Post-Aligner (UMAP 2D)", projection='2d', color_by='genre'
+            aligner_umap_2d,
+            all_genres,
+            title="Post-Aligner (UMAP 2D)",
+            projection="2d",
+            color_by="genre",
         )
     else:
-        print("Skipping UMAP 2D visualization for Post-Aligner embeddings due to previous errors.")
-        
+        print(
+            "Skipping UMAP 2D visualization for Post-Aligner embeddings due to previous errors."
+        )
+
     # -----------------------
     # Now, visualize class distribution using GMM
     # -----------------------
     print("Visualizing class distribution using GMM...")
     # Choose a 2D embedding to use (e.g., mert_tsne_2d)
-    if 'mert_tsne_2d' in locals() and mert_tsne_2d is not None:
+    if "mert_tsne_2d" in locals() and mert_tsne_2d is not None:
         # **Fixed KeyError Here by Passing class_list as None or Unique Genres**
         visualize_class_distribution_gmm(
             mert_tsne_2d,
             labels=all_genres,
-            class_list=None,   # Option 1: Let the function derive class_list automatically
+            class_list=None,  # Option 1: Let the function derive class_list automatically
             # Alternatively, use the line below instead of class_list=None
             # class_list=sorted(list(set(all_genres))),
-            n_components=1,   # or more, if you want multiple Gaussians per class
+            n_components=1,  # or more, if you want multiple Gaussians per class
             grid_size=200,
-            title_prefix="MERT t-SNE 2D"
+            title_prefix="MERT t-SNE 2D",
         )
     else:
-        print("Cannot visualize GMM class distribution: 2D t-SNE embedding not available.")
+        print(
+            "Cannot visualize GMM class distribution: 2D t-SNE embedding not available."
+        )
     # Similarly, you can visualize for other 2D embeddings if desired
-    if 'aligner_tsne_2d' in locals() and aligner_tsne_2d is not None:
+    if "aligner_tsne_2d" in locals() and aligner_tsne_2d is not None:
         visualize_class_distribution_gmm(
             aligner_tsne_2d,
             labels=all_genres,
-            class_list=None,   # Option 1: Let the function derive class_list automatically
+            class_list=None,  # Option 1: Let the function derive class_list automatically
             # class_list=sorted(list(set(all_genres))),
             n_components=1,
             grid_size=200,
-            title_prefix="Post-Aligner t-SNE 2D"
+            title_prefix="Post-Aligner t-SNE 2D",
         )
     else:
-        print("Skipping GMM visualization for Post-Aligner embeddings due to missing 2D embedding.")
+        print(
+            "Skipping GMM visualization for Post-Aligner embeddings due to missing 2D embedding."
+        )
 
 
 if __name__ == "__main__":
@@ -662,38 +825,44 @@ if __name__ == "__main__":
         "--json_file",
         type=str,
         default="visualizations/music_generation_prompts_by_genre.json",
-        help="Path to the JSON file containing music prompts categorized by genre."
+        help="Path to the JSON file containing music prompts categorized by genre.",
     )
     parser.add_argument(
         "--yaml_config",
         type=str,
         default="example_conf/visualization.yaml",
-        help="Path to the YAML configuration file."
+        help="Path to the YAML configuration file.",
     )
     parser.add_argument(
         "--output_dir",
         type=str,
         default="generated_audio/vis",
-        help="Directory where generated audio will be saved."
+        help="Directory where generated audio will be saved.",
     )
     parser.add_argument(
         "--device",
         type=str,
         default="cuda",
         choices=["cuda", "cpu"],
-        help="Computation device to use."
+        help="Computation device to use.",
     )
     parser.add_argument(
         "--max_genres",
         type=int,
         default=None,
-        help="Maximum number of genres to process. If not set, all genres are processed."
+        help="Maximum number of genres to process. If not set, all genres are processed.",
     )
     parser.add_argument(
         "--max_prompts_per_genre",
         type=int,
         default=None,
-        help="Maximum number of prompts to process per genre. If not set, all prompts are processed."
+        help="Maximum number of prompts to process per genre. If not set, all prompts are processed.",
+    )
+    parser.add_argument(
+        "--visualize_t5",
+        type=bool,
+        default=False,
+        help="Whether to visualize T5 embeddings of musicgen",
     )
     args = parser.parse_args()
     main(
@@ -702,5 +871,6 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         device=args.device,
         max_genres=args.max_genres,
-        max_prompts_per_genre=args.max_prompts_per_genre
+        max_prompts_per_genre=args.max_prompts_per_genre,
+        visualize_t5=args.visualize_t5,
     )
