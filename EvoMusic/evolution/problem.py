@@ -46,6 +46,8 @@ class LLMPromptGenerator():
             return llm_response
         except Exception as e:
             print(f"\t[LLM] API request failed: {e}")
+            print(f"\t[LLM] waiting for 5 minutes before retrying...")
+            time.sleep(300)
             return ""
         
     def parse_llm_response(self, response: str):

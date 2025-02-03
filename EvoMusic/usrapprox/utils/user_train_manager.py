@@ -255,11 +255,15 @@ class UsersTrainManager:
         if eval:
             if isinstance(user, SynthUser):
                 self.eval_finetune(user, epoch)
-            else:
+            elif isinstance(user, RealUser):
                 # not implemented error
-                raise NotImplementedError(
-                    "Not implemented! Eval for RealUser is a pain."
-                )
+                # log the number of likes and dislikes
+                res = user.evaluate_playlist()
+                pos = (res == 1).sum()
+                neg = (res == -1).sum()
+                wandb.log({"real_user_likes": pos})
+                wandb.log({"real_user_dislikes": neg})
+                
 
         # Offload memory to cpu
         self.set_memory_device(user, torch.device("cpu"))
