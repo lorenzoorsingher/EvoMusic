@@ -149,116 +149,377 @@ class RealUser(User):
             playlist (list[str]): The playlist of the user as list of file paths.
         """
         self._playlist = playlist
-
+        
     def evaluate_playlist(self) -> torch.Tensor:
         """
-        Launch a GUI that plays each song from the playlist and collects user feedback.
-        For each song, the user is shown the song's file path, the song is played,
-        and the user clicks either "Like" or "Dislike".
+        Launch a two-pane GUI for evaluating songs in the user's playlist:
+        • Left pane: a scrollable list of songs, clickable to play, arrow keys to move up/down.
+        • Right pane: a logo, "Now playing" info, waveform display, playback controls,
+        and a Finish button.
 
         Returns:
-            torch.Tensor: A tensor of feedback values with +1 for liked songs and -1 for disliked songs.
+            torch.Tensor: a 1D tensor with +1/-1/0 for each song (like / dislike / unrated).
         """
-        if self._playlist is None:
-            raise ValueError("Playlist not set.")
-        
-        if self._playlist == self._prev_playlist:
-            feedbacks = self._feedbacks
-            return torch.tensor(feedbacks, dtype=float)
-
-        # Import here so that if this method is not used, dependencies are not required.
         import tkinter as tk
         import pygame
+        from PIL import Image, ImageTk
+        import os
+        import random
+        import torch
 
-        # Initialize pygame mixer for audio playback.
+        # If no playlist is set, raise an error.
+        if self._playlist is None:
+            raise ValueError("Playlist not set.")
+
+        # If this playlist has been evaluated before, just return the stored feedbacks.
+        if self._playlist == self._prev_playlist:
+            return torch.tensor(self._feedbacks, dtype=torch.float)
+
+        # Initialize the pygame mixer for audio playback.
         pygame.mixer.init()
 
-        feedbacks = []
-        song_index = 0
+        # Initialize feedback storage (0 = unrated, 1 = liked, -1 = disliked).
+        feedbacks = [0] * len(self._playlist)
+
+        # Which song index is currently playing/selected, or None if none.
+        current_index = None
+
+        # Keep references to the GUI elements for each song to update colors, etc.
+        song_items = {}
+
+        # -------- COLOR & FONT DEFINITIONS (Spotify-like) --------
+        # Spotify-inspired color palette
+        BG_COLOR = "#121212"       # main window background
+        SIDEBAR_COLOR = "#121212"  # left pane background
+        ITEM_COLOR = "#181818"     # unselected item background
+        TEXT_COLOR = "#b3b3b3"     # standard text color
+        SELECTED_COLOR = "#282828" # highlight for selected item (slightly lighter)
+        ACCENT_COLOR = "#1DB954"   # primary accent (Spotify green)
+        DISLIKE_COLOR = "#e91429"  # red for dislike
+
+        TITLE_FONT = ("Helvetica", 16, "bold")
+        LABEL_FONT = ("Helvetica", 12)
+        NOW_PLAYING_FONT = ("Helvetica", 14)
 
         # Create the main window.
         root = tk.Tk()
         root.title("Music Feedback")
-        root.geometry("500x200")
+        root.geometry("1000x600")
+        root.configure(bg=BG_COLOR)
 
-        # Label to display the current song.
-        song_label = tk.Label(root, text="", font=("Arial", 14))
-        song_label.pack(pady=20)
+        # --- LEFT PANE: Scrollable Playlist ---
+        left_frame = tk.Frame(root, bg=SIDEBAR_COLOR, width=300)
+        left_frame.pack(side="left", fill="y")
 
-        # Function to load and play a song at a given index.
-        def play_song(index: int):
-            if index < len(self._playlist):
-                song_path = self._playlist[index]
-                song_label.config(text=f"Now playing:\n{song_path}")
-                try:
-                    pygame.mixer.music.load(song_path)
-                    pygame.mixer.music.play()
-                except Exception as e:
-                    # If audio fails to play, show the error in the label.
-                    song_label.config(text=f"Error playing {song_path}:\n{e}")
-            else:
-                song_label.config(text="No more songs.")
-
-        # Callback when the user provides feedback.
-        def on_feedback(is_like: bool):
-            nonlocal song_index
-            # Record the feedback: +1 for like, -1 for dislike.
-            feedbacks.append(1 if is_like else -1)
-            # Stop current song playback.
-            pygame.mixer.music.stop()
-            song_index += 1
-            if song_index < len(self._playlist):
-                play_song(song_index)
-            else:
-                # All songs processed: close the window.
-                root.destroy()
-
-        # Create the "Like" and "Dislike" buttons.
-        button_frame = tk.Frame(root)
-        button_frame.pack(pady=10)
-
-        like_button = tk.Button(
-            button_frame,
-            text="Like",
-            command=lambda: on_feedback(True),
-            width=10,
-            height=2,
-            bg="lightgreen"
+        playlist_header = tk.Label(
+            left_frame,
+            text="Playlist",
+            bg=SIDEBAR_COLOR,
+            fg=TEXT_COLOR,
+            font=TITLE_FONT
         )
-        like_button.pack(side="left", padx=20)
+        playlist_header.pack(pady=10)
 
-        dislike_button = tk.Button(
-            button_frame,
-            text="Dislike",
-            command=lambda: on_feedback(False),
-            width=10,
-            height=2,
-            bg="tomato"
+        playlist_canvas = tk.Canvas(left_frame, bg=SIDEBAR_COLOR, highlightthickness=0)
+        playlist_canvas.pack(side="left", fill="both", expand=True)
+
+        scrollbar = tk.Scrollbar(left_frame, orient="vertical", command=playlist_canvas.yview)
+        scrollbar.pack(side="right", fill="y")
+        playlist_canvas.configure(yscrollcommand=scrollbar.set)
+
+        playlist_container = tk.Frame(playlist_canvas, bg=SIDEBAR_COLOR)
+        playlist_canvas.create_window((0, 0), window=playlist_container, anchor="nw")
+
+        # Ensure the canvas scroll region updates when items change size.
+        def on_container_resize(event):
+            playlist_canvas.configure(scrollregion=playlist_canvas.bbox("all"))
+        playlist_container.bind("<Configure>", on_container_resize)
+
+        # --- RIGHT PANE: Logo, "Now playing", waveform, and controls ---
+        right_frame = tk.Frame(root, bg=BG_COLOR)
+        right_frame.pack(side="right", fill="both", expand=True)
+
+        # Load the JPEG logo using LANCZOS for resizing (Pillow 9+).
+        try:
+            with Image.open("img/logo_cropped.jpeg") as logo_image:
+                logo_image = logo_image.resize((150, 150), Image.Resampling.LANCZOS)
+                logo_photo = ImageTk.PhotoImage(logo_image)
+            logo_label = tk.Label(right_frame, image=logo_photo, bg=BG_COLOR)
+            logo_label.image = logo_photo  # store a reference so it doesn't get GC'd
+            logo_label.pack(pady=10)
+        except Exception as e:
+            print(f"Error loading logo: {e}")
+
+        current_song_label = tk.Label(
+            right_frame,
+            text="",
+            bg=BG_COLOR,
+            fg=TEXT_COLOR,
+            font=NOW_PLAYING_FONT
         )
-        dislike_button.pack(side="right", padx=20)
-        
-        # button to replay the song
+        current_song_label.pack(pady=5)
+
+        # A canvas for a dummy waveform display.
+        waveform_canvas = tk.Canvas(right_frame, bg="#101010", height=200, highlightthickness=0)
+        waveform_canvas.pack(pady=10, padx=10, fill="x")
+
+        # A row of controls (Play/Pause/Replay) plus an evaluation label (heart or X).
+        controls_frame = tk.Frame(right_frame, bg=BG_COLOR)
+        controls_frame.pack(pady=10)
+
+        play_button = tk.Button(
+            controls_frame,
+            text="Play",
+            bg=ACCENT_COLOR,
+            fg="#ffffff",
+            relief="flat",
+            width=10,
+            command=lambda: play_current_song()
+        )
+        play_button.pack(side="left", padx=5)
+
+        pause_button = tk.Button(
+            controls_frame,
+            text="Pause",
+            bg=ACCENT_COLOR,
+            fg="#ffffff",
+            relief="flat",
+            width=10,
+            command=lambda: pause_song()
+        )
+        pause_button.pack(side="left", padx=5)
+
         replay_button = tk.Button(
-            button_frame,
+            controls_frame,
             text="Replay",
-            command=lambda: play_song(song_index),
+            bg=ACCENT_COLOR,
+            fg="#ffffff",
+            relief="flat",
             width=10,
-            height=2,
-            bg="lightblue"
+            command=lambda: replay_song()
         )
-        replay_button.pack(side="right", padx=20)
+        replay_button.pack(side="left", padx=5)
 
-        # Start by playing the first song.
-        play_song(song_index)
+        evaluation_label = tk.Label(
+            controls_frame,
+            text="",
+            bg=BG_COLOR,
+            fg=ACCENT_COLOR,
+            font=("Helvetica", 16)
+        )
+        evaluation_label.pack(side="left", padx=10)
 
-        # Run the Tkinter event loop (this call is blocking until the window is closed).
+        finish_button = tk.Button(
+            right_frame,
+            text="Finish",
+            bg=ACCENT_COLOR,
+            fg="#ffffff",
+            relief="flat",
+            width=15,
+            command=lambda: finish()
+        )
+        finish_button.pack(pady=10)
+
+        # -------------- HELPER FUNCTIONS --------------
+
+        def draw_waveform():
+            """Draws a random 'waveform' on the waveform canvas for visual effect."""
+            waveform_canvas.delete("all")
+            width = waveform_canvas.winfo_width() or 400
+            height = waveform_canvas.winfo_height() or 200
+            num_points = 80
+            step = width / max(1, (num_points - 1))
+            points = [random.randint(0, height) for _ in range(num_points)]
+
+            for i in range(num_points - 1):
+                x1 = i * step
+                y1 = height - points[i]
+                x2 = (i + 1) * step
+                y2 = height - points[i + 1]
+                waveform_canvas.create_line(x1, y1, x2, y2, fill=ACCENT_COLOR, width=2)
+
+        def play_song(index: int):
+            """Play the song at the given index, update highlights and labels."""
+            nonlocal current_index
+            old_index = current_index
+            current_index = index
+
+            song_path = self._playlist[index]
+            current_song_label.config(text=f"Now playing: {os.path.basename(song_path)}")
+
+            # Un-highlight the old selection
+            if old_index is not None and old_index != index:
+                set_item_color(old_index, selected=False)
+
+            # Highlight the new selection
+            set_item_color(index, selected=True)
+
+            # Load and play
+            try:
+                pygame.mixer.music.load(song_path)
+                pygame.mixer.music.play()
+            except Exception as e:
+                current_song_label.config(text=f"Error playing {os.path.basename(song_path)}: {e}")
+
+            draw_waveform()
+            update_evaluation_label()
+
+        def play_current_song():
+            """Resume playback of the current track if paused."""
+            if current_index is not None:
+                pygame.mixer.music.unpause()
+
+        def pause_song():
+            """Pause the current track."""
+            pygame.mixer.music.pause()
+
+        def replay_song():
+            """Rewind and replay the current track."""
+            if current_index is not None:
+                pygame.mixer.music.rewind()
+                pygame.mixer.music.play()
+                draw_waveform()
+                update_evaluation_label()
+
+        def finish():
+            """Stop playback and close the app."""
+            pygame.mixer.music.stop()
+            root.destroy()
+
+        def update_evaluation_label():
+            """Refresh the heart or X beside the play/pause/replay buttons."""
+            if current_index is None:
+                evaluation_label.config(text="")
+                return
+            rating = feedbacks[current_index]
+            if rating == 1:
+                evaluation_label.config(text="❤", fg=ACCENT_COLOR)
+            elif rating == -1:
+                evaluation_label.config(text="✖", fg=DISLIKE_COLOR)
+            else:
+                evaluation_label.config(text="", fg="#ffffff")
+
+        # --- Song Item Coloring & Rating ---
+
+        def set_item_color(idx: int, selected: bool = False):
+            """Set the color of the item in the playlist based on rating and selection."""
+            rating = feedbacks[idx]
+            if rating == 1:
+                color = ACCENT_COLOR    # green for liked
+            elif rating == -1:
+                color = DISLIKE_COLOR   # red for disliked
+            else:
+                color = ITEM_COLOR      # neutral dark
+
+            frame = song_items[idx]["frame"]
+            label = song_items[idx]["label"]
+
+            # If selected, highlight with a slightly lighter background
+            if selected:
+                frame.config(bg=SELECTED_COLOR)
+                label.config(bg=SELECTED_COLOR)
+            else:
+                frame.config(bg=color)
+                label.config(bg=color)
+
+        def rate_song(idx: int, rating: int):
+            """Record the rating and recolor the item. Update the evaluation label if it's the current track."""
+            feedbacks[idx] = rating
+            set_item_color(idx, selected=(idx == current_index))
+            if idx == current_index:
+                update_evaluation_label()
+
+        # --- ARROW KEYS NAVIGATION ---
+
+        def select_previous_song(event=None):
+            """Move up in the playlist (arrow up)."""
+            nonlocal current_index
+            if not self._playlist:
+                return
+            if current_index is None:
+                current_index = 0
+            else:
+                current_index = max(0, current_index - 1)
+            play_song(current_index)
+            scroll_to_item(current_index)
+
+        def select_next_song(event=None):
+            """Move down in the playlist (arrow down)."""
+            nonlocal current_index
+            if not self._playlist:
+                return
+            if current_index is None:
+                current_index = 0
+            else:
+                current_index = min(len(self._playlist) - 1, current_index + 1)
+            play_song(current_index)
+            scroll_to_item(current_index)
+
+        root.bind("<Up>", select_previous_song)
+        root.bind("<Down>", select_next_song)
+
+        def scroll_to_item(idx: int):
+            """Scroll the left pane so item idx is in view."""
+            if len(self._playlist) > 1:
+                fraction = idx / float(len(self._playlist) - 1)
+                playlist_canvas.yview_moveto(fraction)
+
+        # --- BUILD THE PLAYLIST UI ---
+        for idx, song_path in enumerate(self._playlist):
+            item_frame = tk.Frame(playlist_container, bg=ITEM_COLOR, padx=5, pady=5)
+            item_frame.pack(fill="x", pady=2, padx=5)
+
+            song_name = os.path.basename(song_path)
+            label = tk.Label(
+                item_frame,
+                text=song_name,
+                bg=ITEM_COLOR,
+                fg=TEXT_COLOR,
+                font=LABEL_FONT,
+                anchor="w"
+            )
+            label.pack(side="left", fill="x", expand=True)
+
+            # Clicking the song name plays it immediately.
+            label.bind("<Button-1>", lambda e, i=idx: play_song(i))
+
+            # Dislike (✖) button
+            dislike_button = tk.Button(
+                item_frame,
+                text="✖",
+                bg=ITEM_COLOR,
+                fg=TEXT_COLOR,
+                relief="flat",
+                command=lambda i=idx: rate_song(i, -1)
+            )
+            dislike_button.pack(side="right", padx=2)
+
+            # Like (❤) button
+            like_button = tk.Button(
+                item_frame,
+                text="❤",
+                bg=ITEM_COLOR,
+                fg=TEXT_COLOR,
+                relief="flat",
+                command=lambda i=idx: rate_song(i, 1)
+            )
+            like_button.pack(side="right", padx=2)
+
+            song_items[idx] = {"frame": item_frame, "label": label}
+
+        # If there are songs, start playing the first one.
+        if self._playlist:
+            play_song(0)
+
+        # Start the Tkinter event loop.
         root.mainloop()
 
-        # Clean up the mixer after finishing.
+        # Cleanup the mixer.
         pygame.mixer.quit()
-        
+
+        # Save and store feedback in the user object.
         self._feedbacks = feedbacks
         self._prev_playlist = self._playlist
 
-        # Convert feedback list to a PyTorch tensor.
-        return torch.tensor(feedbacks, dtype=float)
+        # Return the final feedback as a tensor.
+        return torch.tensor(feedbacks, dtype=torch.float)

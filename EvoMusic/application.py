@@ -211,9 +211,12 @@ class EvoMusic:
         """
         if epochs is None:
             epochs = self.config.epochs
-
-        for _ in range(epochs):
-            self.single_step(user_idx, n_generations)
+        
+        for i in range(epochs):
+            if self.config.evolution.fitness.mode == "dynamic" and i == 0:
+                self.single_step(user_idx, 1) # first step is to generate the initial music and get the initial feedback to finetune the user
+            else:
+                self.single_step(user_idx, n_generations)
 
     def single_step(self, user_idx: int = 0, n_generations: int = None):
         """
