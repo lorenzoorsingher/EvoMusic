@@ -123,8 +123,18 @@ class EvoMusic:
         solutions, fitnesses = zip(
             *sorted(zip(solutions, fitnesses), key=lambda x: x[1], reverse=True)
         )
-        solutions = solutions[: self.config.user_model.best_solutions]
-        fitnesses = fitnesses[: self.config.user_model.best_solutions]
+        
+        if self.config.user_model.sample:
+            # use random sampling based on rank
+            prob = [1 / (i + 1) for i in range(len(solutions))]
+            sum_prob = sum(prob)
+            prob = [p / sum_prob for p in prob]
+            indices = np.random.choice(len(solutions), self.config.user_model.best_solutions, replace=False, p=prob)
+            solutions = [solutions[i] for i in indices]
+            fitnesses = [fitnesses[i] for i in indices]
+        else:
+            solutions = solutions[: self.config.user_model.best_solutions]
+            fitnesses = fitnesses[: self.config.user_model.best_solutions]
 
         for i, fit, sol in zip(range(len(solutions)), fitnesses, solutions):
             if not self.evolver.problem.text_mode:

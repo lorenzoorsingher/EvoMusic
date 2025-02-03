@@ -132,6 +132,8 @@ class UserApproximationConfig:
     train_conf: TrainConfig = TrainConfig()
     
     best_solutions: int = 10 # number of best solutions to keep
+    sample: bool = False  
+    "use multinomial sampling to select the individuals for all operations based on ranking"
     
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
