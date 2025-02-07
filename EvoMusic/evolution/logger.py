@@ -143,17 +143,21 @@ class LivePlotter(Logger):
         else:   
             print(f"\nIteration: {current_iter} | Average Fitness: {avg_fitness} | Worst Fitness: {worst} | Best Fitness: {best_fitness} | time: {time_diff:.2f}s | avg time: {self.avg_time:.2f}s\n")
         
-        best_audio_path = self.generator.generate_music(
-            input=best, 
-            name="BestPop" + str(current_iter), 
-            duration=self.problem.evo_config.best_duration
-        )
-        
-        if self.config.wandb:
-            if self.problem.text_mode:
-                wandb.log({"Best Audio": wandb.Audio(best_audio_path, caption=best)})
-            else:
-                wandb.log({"Best Audio": wandb.Audio(best_audio_path)})
+        if self.config.wandb or not self.config.delete_generated:
+            best_audio_path = self.generator.generate_music(
+                input=best, 
+                name="BestPop" + str(current_iter), 
+                duration=self.problem.evo_config.best_duration
+            )
+            
+            if self.config.wandb:
+                if self.problem.text_mode:
+                    wandb.log({"Best Audio": wandb.Audio(best_audio_path, caption=best)})
+                else:
+                    wandb.log({"Best Audio": wandb.Audio(best_audio_path)})
+                    
+            if self.config.delete_generated:
+                os.remove(best_audio_path)
                 
         self.start_time = time.time()
 

@@ -16,6 +16,7 @@ class UsersTrainManager:
         users_config: UserConfig,
         train_config: TrainConfig,
         aligner_config: AlignerV2Config = AlignerV2Config(),
+        wandb: bool = False,
         device: str = "cuda",
     ):
         self.device = device
@@ -43,6 +44,7 @@ class UsersTrainManager:
 
         self._train_config = train_config
         self._optimizer = None
+        self._wandb = wandb
 
     def __feedback_loss(
         self,
@@ -190,16 +192,17 @@ class UsersTrainManager:
             torch.Tensor(music_scores), torch.Tensor(target_scores)
         ).mean()
 
-        # Log
-        wandb.log({f"user: {user.uuid} Validation/Abs Embedding": abs_diff})
-        wandb.log({f"user: {user.uuid} Validation/MSE Embedding": mse_diff})
-        wandb.log({f"user: {user.uuid} Validation/Loss": losses})
-        wandb.log(
-            {
-                f"user: {user.uuid} Validation/Cosine Model": average_cosine_similarity_on_model
-            }
-        )
-        wandb.log({f"user: {user.uuid} Validation/Cosine Scores": cosine_scores})
+        if self._wandb:
+            # Log
+            wandb.log({f"user: {user.uuid} Validation/Abs Embedding": abs_diff})
+            wandb.log({f"user: {user.uuid} Validation/MSE Embedding": mse_diff})
+            wandb.log({f"user: {user.uuid} Validation/Loss": losses})
+            wandb.log(
+                {
+                    f"user: {user.uuid} Validation/Cosine Model": average_cosine_similarity_on_model
+                }
+            )
+            wandb.log({f"user: {user.uuid} Validation/Cosine Scores": cosine_scores})
 
     def set_optimizer(self):
         if self._optimizer is None:
@@ -222,7 +225,7 @@ class UsersTrainManager:
         Note: The memory is offloaded to the cpu after each step of finetuning.
         """
         self.set_optimizer()
-        if epoch > 0:
+        if epoch > 0 and self._wandb:
             wandb.log({"epoch": epoch - 1})
 
         losses = []
@@ -253,7 +256,7 @@ class UsersTrainManager:
                 losses.append(loss)
 
         if eval:
-            if isinstance(user, SynthUser):
+            if isinstance(user, SynthUser) and self._train_config.eval:
                 self.eval_finetune(user, epoch)
             elif isinstance(user, RealUser):
                 # not implemented error
@@ -261,15 +264,17 @@ class UsersTrainManager:
                 res = user.evaluate_playlist()
                 pos = (res == 1).sum()
                 neg = (res == -1).sum()
-                wandb.log({"real_user_likes": pos})
-                wandb.log({"real_user_dislikes": neg})
+                if self._wandb:
+                    wandb.log({"real_user_likes": pos})
+                    wandb.log({"real_user_dislikes": neg})
                 
 
         # Offload memory to cpu
         self.set_memory_device(user, torch.device("cpu"))
 
-        wandb.log({"epoch": epoch})
-        wandb.log({"Loss/finetune_user": torch.tensor(losses).mean().item()})
+        if self._wandb:
+            wandb.log({"epoch": epoch})
+            wandb.log({"Loss/finetune_user": torch.tensor(losses).mean().item()})
 
     def shuffle_and_create_minibatches(self, memory, feedback, batch_size):
         """

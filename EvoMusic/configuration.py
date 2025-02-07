@@ -91,7 +91,6 @@ class UserConfig:
     amount: int = 1 # number of users
     init: str = "mean"  # "random" or "mean" or "rmean"
     rmean: float = 0.1  # used only if init is "rmean" - weight of the random noise
-
     
     def __post_init__(self):
         assert self.init in ["random", "mean", "rmean"], "Invalid init mode"
@@ -110,6 +109,8 @@ class TrainConfig:
     type: str = "UserDefinedContrastiveDataset"  # UserDefinedContrastiveDataset (use this one) or ContrDatasetMERT
     epochs: int = 20
     random_pool: bool = None
+    
+    eval: bool = True  # whether to evaluate the user model
 
     # COMMON
     lr: float = 0.001
@@ -152,8 +153,11 @@ class UserApproximationConfig:
 class evolutionLogger:
     wandb: bool = False  # whether to log the evolution to the wandb platform
     project: str = ""  # name of the wandb project
+    
     name: str = ""  # name of the wandb run
     # NOTE: the name is overriden by the experiment name
+    
+    delete_generated: bool = False  # delete the generated music after the evaluation
 
     wandb_token: str = ""  # wandb token to use for the logging
 

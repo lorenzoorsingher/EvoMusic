@@ -50,6 +50,7 @@ class EvoMusic:
                 aligner_config=self.config.user_model.aligner,
                 train_config=self.config.user_model.train_conf,
                 device=self.config.user_model.device,
+                wandb=self.config.evolution.logger.wandb,
             )
         elif self.config.evolution.fitness.mode == "music":
             self.user_manager = None
@@ -174,26 +175,27 @@ class EvoMusic:
         # breakpoint()
         if isinstance(user, RealUser):
             user.set_playlist(songs)
-            
-        _, _, _, score = self.user_manager.get_reference_score(user, batch)
-        # log max, min, mean, std of the scores
-        wandb.log(
-            {f"user: {user_idx} Validation/max score generated": score.max().item()}
-        )
-        wandb.log(
-            {f"user: {user_idx} Validation/min score generated": score.min().item()}
-        )
-        wandb.log(
-            {f"user: {user_idx} Validation/mean score generated": score.mean().item()}
-        )
-        wandb.log(
-            {f"user: {user_idx} Validation/std score generated": score.std().item()}
-        )
-        wandb.log(
-            {
-                f"user: {user_idx} Validation/median score generated": score.median().item()
-            }
-        )
+        
+        if self.config.evolution.logger.wandb:
+            _, _, _, score = self.user_manager.get_reference_score(user, batch)
+            # log max, min, mean, std of the scores
+            wandb.log(
+                {f"user: {user_idx} Validation/max score generated": score.max().item()}
+            )
+            wandb.log(
+                {f"user: {user_idx} Validation/min score generated": score.min().item()}
+            )
+            wandb.log(
+                {f"user: {user_idx} Validation/mean score generated": score.mean().item()}
+            )
+            wandb.log(
+                {f"user: {user_idx} Validation/std score generated": score.std().item()}
+            )
+            wandb.log(
+                {
+                    f"user: {user_idx} Validation/median score generated": score.median().item()
+                }
+            )
 
         self.user_manager.finetune(user, batch, self.epoch[user_idx])
         self.epoch[user_idx] += 1
@@ -249,6 +251,10 @@ class EvoMusic:
             self.config.evolution.best_duration,
         )
         self.finetune_user(music, user_idx)
+        
+        if self.config.evolution.logger.delete_generated:
+            for song in music:
+                os.remove(song)
 
         print(
             "==========================================================================================="
