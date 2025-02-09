@@ -101,6 +101,12 @@ Embedding optimization directly manipulates the token embeddings used in the con
 This work addresses the challenge of measuring song quality, which is subjective and difficult to quantify. We propose **AlignerV2**, a model that aligns user and music embeddings in a shared latent space, allowing similarity calculations between them. Since real user embeddings are not available, synthetic user embeddings are generated from a large dataset of music interactions (Last.fm). The MERT encoder is used to extract music embeddings, leveraging all 13 hidden layers through a gating mechanism. Finally, we can calculate the similarity between user and music embeddings, allowing us to approximate a fitness function for the downstream tasks.
 AlignerV2 is trained with contrastive learning using InfoNCE loss with learnable temperature
 
+<p align="center">
+<img src="img/interface.png" style="display:block;float:none;margin-left:auto;margin-right:auto;width:60%"/>
+</p>
+
+We implemented a GUI in order to facilitate the user interaction with the system. The GUI allows the user to listen to the generated music and provided feedback. An emergent behavior surfaced by injecting real human feedback in the loop was a great improvement in the quality of the generated music for the numerical optimization methods, where the synthesized feedback would sometimes fail to weed out noisy solutions.
+
 ## Installation
 
 To install the required pa[c](https://github.com/lorenzoorsingher/EvoMusic/blob/main/EvoMusic_report.pdf)kages, run the following commands:
