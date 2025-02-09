@@ -1,4 +1,3 @@
-<<<<<<< HEAD:organization.drawio
 <mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" version="26.0.2">
   <diagram name="Page-1" id="5qk1M9Fl1hlWYoU_ZyAV">
     <mxGraphModel dx="1302" dy="811" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
@@ -40,14 +39,6 @@
         <mxCell id="C4_qE7LHH-83N8kk69I4-129" value="" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
           <mxGeometry x="268" y="710" width="1042" height="380" as="geometry" />
         </mxCell>
-=======
-<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36" version="24.7.17">
-  <diagram name="Page-1" id="5qk1M9Fl1hlWYoU_ZyAV">
-    <mxGraphModel dx="1434" dy="1880" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
-      <root>
-        <mxCell id="0" />
-        <mxCell id="1" parent="0" />
->>>>>>> origin/usr_approx:plot.drawio
         <mxCell id="CBEwIlwH5FtXZjfvDgn--34" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
           <mxGeometry x="1150" y="290" width="170" height="140" as="geometry" />
         </mxCell>
@@ -55,17 +46,10 @@
           <mxGeometry x="900" y="430" width="420" height="110" as="geometry" />
         </mxCell>
         <mxCell id="CBEwIlwH5FtXZjfvDgn--32" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
-<<<<<<< HEAD:organization.drawio
           <mxGeometry x="590" y="280" width="500" height="120" as="geometry" />
         </mxCell>
         <mxCell id="CBEwIlwH5FtXZjfvDgn--31" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
           <mxGeometry x="258" y="319.5" width="184" height="121" as="geometry" />
-=======
-          <mxGeometry x="590" y="190" width="500" height="210" as="geometry" />
-        </mxCell>
-        <mxCell id="CBEwIlwH5FtXZjfvDgn--31" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
-          <mxGeometry x="258" y="319.5" width="302" height="121" as="geometry" />
->>>>>>> origin/usr_approx:plot.drawio
         </mxCell>
         <mxCell id="CBEwIlwH5FtXZjfvDgn--21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeWidth=2;fillColor=#e1d5e7;strokeColor=#9673a6;endSize=3;startSize=3;endArrow=openThin;endFill=0;" parent="1" source="CBEwIlwH5FtXZjfvDgn--1" target="CBEwIlwH5FtXZjfvDgn--2" edge="1">
           <mxGeometry relative="1" as="geometry" />
@@ -153,19 +137,12 @@
         <mxCell id="CBEwIlwH5FtXZjfvDgn--38" value="Laurence" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" parent="1" vertex="1">
           <mxGeometry x="1170" y="440.5" width="60" height="30" as="geometry" />
         </mxCell>
-<<<<<<< HEAD:organization.drawio
-=======
-        <mxCell id="R_brhPZDmrhsbd484Th9-1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="CBEwIlwH5FtXZjfvDgn--39" target="CBEwIlwH5FtXZjfvDgn--5">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
->>>>>>> origin/usr_approx:plot.drawio
         <mxCell id="CBEwIlwH5FtXZjfvDgn--39" value="Ettore" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" parent="1" vertex="1">
           <mxGeometry x="780" y="289.5" width="60" height="30" as="geometry" />
         </mxCell>
         <mxCell id="CBEwIlwH5FtXZjfvDgn--40" value="Davide" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" parent="1" vertex="1">
           <mxGeometry x="1163" y="425" width="60" height="30" as="geometry" />
         </mxCell>
-<<<<<<< HEAD:organization.drawio
         <mxCell id="C4_qE7LHH-83N8kk69I4-1" value="&lt;b&gt;&lt;font style=&quot;font-size: 18px;&quot;&gt;Final User experience&lt;/font&gt;&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
           <mxGeometry x="640" y="720" width="300" height="30" as="geometry" />
         </mxCell>
@@ -729,54 +706,6 @@
             <mxPoint x="670" y="1680" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-=======
-        <mxCell id="R_brhPZDmrhsbd484Th9-4" value="" style="group" vertex="1" connectable="0" parent="1">
-          <mxGeometry x="1570" y="-150" width="320" height="320" as="geometry" />
-        </mxCell>
-        <mxCell id="R_brhPZDmrhsbd484Th9-2" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=3;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="R_brhPZDmrhsbd484Th9-4">
-          <mxGeometry width="320" height="320" as="geometry" />
-        </mxCell>
-        <mxCell id="R_brhPZDmrhsbd484Th9-3" value="Lollo - Reccomendation Model" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1" vertex="1" parent="R_brhPZDmrhsbd484Th9-4">
-          <mxGeometry x="10" width="300" height="30" as="geometry" />
-        </mxCell>
-        <mxCell id="R_brhPZDmrhsbd484Th9-5" value="" style="group" vertex="1" connectable="0" parent="1">
-          <mxGeometry x="1570" y="560" width="320" height="320" as="geometry" />
-        </mxCell>
-        <mxCell id="R_brhPZDmrhsbd484Th9-6" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=3;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="R_brhPZDmrhsbd484Th9-5">
-          <mxGeometry width="320" height="320" as="geometry" />
-        </mxCell>
-        <mxCell id="R_brhPZDmrhsbd484Th9-7" value="Ettore - Synthetic Users" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1" vertex="1" parent="R_brhPZDmrhsbd484Th9-5">
-          <mxGeometry x="10" width="300" height="30" as="geometry" />
-        </mxCell>
-        <mxCell id="R_brhPZDmrhsbd484Th9-8" value="" style="group" vertex="1" connectable="0" parent="1">
-          <mxGeometry x="2125" y="295.5" width="320" height="320" as="geometry" />
-        </mxCell>
-        <mxCell id="R_brhPZDmrhsbd484Th9-9" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=3;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="R_brhPZDmrhsbd484Th9-8">
-          <mxGeometry width="320" height="320" as="geometry" />
-        </mxCell>
-        <mxCell id="R_brhPZDmrhsbd484Th9-10" value="Davide, Laurene - EA Evolution of Songs" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1" vertex="1" parent="R_brhPZDmrhsbd484Th9-8">
-          <mxGeometry x="10" width="300" height="30" as="geometry" />
-        </mxCell>
-        <mxCell id="R_brhPZDmrhsbd484Th9-11" value="Songs reccomentation score" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="R_brhPZDmrhsbd484Th9-2" target="R_brhPZDmrhsbd484Th9-7">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="R_brhPZDmrhsbd484Th9-12" value="User&#39;s songs score" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;curved=0;" edge="1" parent="1" source="R_brhPZDmrhsbd484Th9-6" target="R_brhPZDmrhsbd484Th9-9">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="R_brhPZDmrhsbd484Th9-13" value="Songs with improved fit" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;curved=0;" edge="1" parent="1" source="R_brhPZDmrhsbd484Th9-10" target="R_brhPZDmrhsbd484Th9-3">
-          <mxGeometry x="-0.9125" relative="1" as="geometry">
-            <mxPoint y="1" as="offset" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="R_brhPZDmrhsbd484Th9-14" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;curved=0;" edge="1" parent="1" source="R_brhPZDmrhsbd484Th9-10" target="R_brhPZDmrhsbd484Th9-7">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="2285" y="180" />
-              <mxPoint x="1805" y="180" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
->>>>>>> origin/usr_approx:plot.drawio
       </root>
     </mxGraphModel>
   </diagram>

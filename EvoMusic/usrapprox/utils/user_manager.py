@@ -85,7 +85,8 @@ class UserManager:
         This works with torch.no_grad().
         """
         if isinstance(user, RealUser):
-            raise NotImplementedError()
+            user_embedding, embeddings, temperature = None, None, None
+            music_score = user.evaluate_playlist().to(self.device)
         elif isinstance(user, SynthUser):
             with torch.no_grad():
                 # usr_embedding_id = user._user_id
